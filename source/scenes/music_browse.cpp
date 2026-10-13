@@ -297,7 +297,12 @@ static void load_collection(void *) {
 
 	if (!cached) {
 		add_cpu_limit(ADDITIONAL_CPU_LIMIT);
-		result = music_load_collection(browse_id);
+		const std::string account_prefix = MUSIC_ACCOUNT_PREFIX;
+		if (browse_id.compare(0, account_prefix.size(), account_prefix) == 0) { // the user's own playlist
+			result = music_load_account_playlist(browse_id.substr(account_prefix.size()));
+		} else {
+			result = music_load_collection(browse_id);
+		}
 		remove_cpu_limit(ADDITIONAL_CPU_LIMIT);
 	}
 
@@ -307,7 +312,7 @@ static void load_collection(void *) {
 		return;
 	}
 	collection = result;
-	if (result.error == "") {
+	if (result.error == "" && !result.from_account) { // account playlists change (liked songs...) : not cached
 		if (collection_cache.size() >= COLLECTION_CACHE_MAX) {
 			collection_cache.clear();
 		}
@@ -338,7 +343,9 @@ static void load_more_tracks(void *) {
 		    track_to_view(result.tracks[i], i, result.kind != MusicCollection::Kind::ALBUM));
 	}
 	collection = result;
-	collection_cache[collection.browse_id] = collection;
+	if (!collection.from_account) {
+		collection_cache[collection.browse_id] = collection;
+	}
 	// replace the bottom view (always the last one)
 	View *new_bottom_view = make_bottom_view();
 	for (auto &view : main_view->views) {

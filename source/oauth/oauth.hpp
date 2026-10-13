@@ -34,6 +34,10 @@ void refresh_access_token();
 void revoke_tokens();
 bool is_authenticated();
 std::string get_access_token();
+// returns an access token that isn't expired, refreshing it first if needed (thread-safe; may block on the network).
+// `force_refresh` : refresh even if the token looks valid (e.g. after a request was rejected with HTTP 401).
+// Returns "" if not signed in or the refresh failed.
+std::string get_valid_access_token(bool force_refresh = false);
 std::string get_user_account_name();
 std::string get_user_channel_id();
 std::string get_user_photo_url();

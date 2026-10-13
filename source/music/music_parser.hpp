@@ -54,10 +54,26 @@ struct MusicCollection {
 	std::string all_songs_browse_id;  // playlist containing all of the artist's songs
 	std::vector<MusicItem> releases;  // albums, singles & EPs
 
+	bool from_account = false; // loaded with music_load_account_playlist()
+
 	bool has_more() const { return continuation != ""; }
 	void load_more();
 };
 MusicCollection music_load_collection(const std::string &browse_id);
+
+// The signed-in user's library. YouTube Music's own API (WEB_REMIX) rejects the app's TV sign-in tokens
+// (HTTP 400), so this uses the regular YouTube API with the ANDROID_VR client, which accepts them.
+// Playlists here are YouTube playlists, the same ones YouTube Music shows.
+struct MusicLibraryResult {
+	std::string error;
+	std::vector<MusicItem> playlists; // type PLAYLIST, browse_id "VL<playlist id>"; doesn't include Liked Music
+};
+MusicLibraryResult music_load_library();
+// browse ids of the user's playlists are passed around (e.g. as the MUSIC_BROWSE scene arg) with this prefix
+#define MUSIC_ACCOUNT_PREFIX "account:"
+#define MUSIC_LIKED_MUSIC_BROWSE_ID "VLLM"
+// `browse_id` : "VL<playlist id>", without MUSIC_ACCOUNT_PREFIX
+MusicCollection music_load_account_playlist(const std::string &browse_id);
 
 // home feed : shelves from the YouTube Music home and explore pages (works signed out)
 struct MusicShelf {
@@ -72,6 +88,16 @@ MusicHomeResult music_load_home();
 
 // "radio" (automix) based on a track; the first item is usually the seed track itself
 std::vector<MusicTrack> music_load_radio(const std::string &video_id, std::string &error);
+
+// plain (unsynced) lyrics of a track
+struct MusicLyrics {
+	std::string error;     // network / API error
+	bool available = false; // false : the track has no lyrics (e.g. most music videos), `message` says why
+	std::string text;      // lines separated by '\n'
+	std::string source;    // e.g. "Source: Musixmatch"
+	std::string message;
+};
+MusicLyrics music_load_lyrics(const std::string &video_id);
 
 // rewrites a googleusercontent / ytimg thumbnail url to the requested square size (jpeg)
 std::string music_thumbnail_url(const std::string &url, int size);

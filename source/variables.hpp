@@ -12,7 +12,6 @@ extern bool var_history_enabled;
 extern bool var_oauth_enabled;
 extern int var_autoplay_level;
 extern bool var_show_fps;
-extern bool var_full_dislike_like_count;
 extern bool var_sponsorblock_enabled;
 extern int var_player_response;
 extern double var_forward_buffer_ratio;
@@ -51,10 +50,6 @@ extern bool var_core2_available;
 extern bool var_core3_available;
 extern bool var_app_suspended; // i.e. home button preessed
 
-#define COMMUNITY_IMAGE_SIZE_MIN 50
-#define COMMUNITY_IMAGE_SIZE_DEFAULT 200
-#define COMMUNITY_IMAGE_SIZE_MAX 280
-extern int var_community_image_size;
 
 extern double var_scroll_speed;
 extern double var_battery_voltage;
@@ -65,5 +60,3 @@ extern std::string var_lang;
 extern std::string var_lang_content;
 extern u8 var_model;
 extern C2D_Image var_square_image[1];
-extern C2D_Image var_texture_thumb_up[2];
-extern C2D_Image var_texture_thumb_down[2];

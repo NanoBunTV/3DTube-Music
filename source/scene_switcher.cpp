@@ -2,7 +2,6 @@
 
 #include "scenes/video_player.hpp"
 #include "scenes/search.hpp"
-#include "scenes/channel.hpp"
 #include "scenes/about.hpp"
 #include "scenes/setting_menu.hpp"
 #include "scenes/watch_history.hpp"
@@ -145,8 +144,6 @@ void Menu_init(void) {
 	Sem_suspend();
 	VideoPlayer_init();
 	VideoPlayer_suspend();
-	Channel_init();
-	Channel_suspend();
 	About_init();
 	About_suspend();
 	History_init();
@@ -177,7 +174,6 @@ void Menu_exit(void) {
 	menu_thread_run = false;
 
 	VideoPlayer_exit();
-	Channel_exit();
 	Search_exit();
 	MusicBrowse_exit();
 	Sem_exit();
@@ -285,8 +281,6 @@ bool Menu_main(void) {
 		VideoPlayer_draw();
 	} else if (global_current_scene == SceneType::SEARCH) {
 		Search_draw();
-	} else if (global_current_scene == SceneType::CHANNEL) {
-		Channel_draw();
 	} else if (global_current_scene == SceneType::SETTINGS) {
 		Sem_draw();
 	} else if (global_current_scene == SceneType::ABOUT) {
@@ -305,8 +299,6 @@ bool Menu_main(void) {
 			VideoPlayer_suspend();
 		} else if (global_current_scene == SceneType::SEARCH) {
 			Search_suspend();
-		} else if (global_current_scene == SceneType::CHANNEL) {
-			Channel_suspend();
 		} else if (global_current_scene == SceneType::SETTINGS) {
 			Sem_suspend();
 		} else if (global_current_scene == SceneType::ABOUT) {
@@ -360,8 +352,6 @@ bool Menu_main(void) {
 			VideoPlayer_resume(arg);
 		} else if (global_current_scene == SceneType::SEARCH) {
 			Search_resume(arg);
-		} else if (global_current_scene == SceneType::CHANNEL) {
-			Channel_resume(arg);
 		} else if (global_current_scene == SceneType::SETTINGS) {
 			Sem_resume(arg);
 		} else if (global_current_scene == SceneType::ABOUT) {

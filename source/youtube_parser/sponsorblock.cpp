@@ -24,22 +24,19 @@ static std::string sha256_hex_prefix(const std::string &input, size_t prefix_len
 	return res.substr(0, prefix_len);
 }
 
-void youtube_fetch_sponsor_segments(YouTubeVideoDetail &res) {
+std::string youtube_sponsorblock_url(const std::string &video_id) {
+	return SPONSORBLOCK_API_URL + sha256_hex_prefix(video_id, 4) +
+	       "?categories=" SPONSORBLOCK_CATEGORIES "&actionType=skip";
+}
+
+void youtube_parse_sponsor_segments(YouTubeVideoDetail &res, const std::string &response) {
 	res.sponsor_segments.clear();
-	if (res.id.empty() || res.is_livestream) {
+	// SponsorBlock answers 404 (with a non-JSON body) when no segments exist
+	if (res.id.empty() || res.is_livestream || response.empty() || response[0] != '[') {
 		return;
 	}
 
-	std::string url = SPONSORBLOCK_API_URL + sha256_hex_prefix(res.id, 4) +
-	                  "?categories=" SPONSORBLOCK_CATEGORIES "&actionType=skip";
-	// http_get() treats HTTP errors as success; SponsorBlock answers 404 when no segments exist,
-	// which simply fails to parse as an array below
-	auto response = http_get(url);
-	if (!response.first || response.second.empty() || response.second[0] != '[') {
-		return;
-	}
-
-	std::vector<char> data(response.second.begin(), response.second.end());
+	std::vector<char> data(response.begin(), response.end());
 	data.push_back('\0');
 	parse_json_destructive(
 	    &data[0],

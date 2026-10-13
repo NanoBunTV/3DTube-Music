@@ -1,5 +1,6 @@
 #include "youtube_parser/internal_common.hpp"
 #include "music/music_parser.hpp"
+#include "oauth/oauth.hpp"
 #include <algorithm>
 
 #define MUSIC_API_BASE "https://music.youtube.com/youtubei/v1/"
@@ -409,8 +410,14 @@ MusicCollection music_load_collection(const std::string &browse_id) {
 	return res;
 }
 
+static void account_playlist_load_more(MusicCollection &collection);
+
 void MusicCollection::load_more() {
 	if (continuation.empty()) {
+		return;
+	}
+	if (from_account) {
+		account_playlist_load_more(*this);
 		return;
 	}
 	std::string new_continuation;
@@ -547,6 +554,195 @@ std::vector<MusicTrack> music_load_radio(const std::string &video_id, std::strin
 		error = "Empty radio";
 	}
 	return res;
+}
+
+// next → the "Lyrics" tab's browse id (MPLYt_...) → browse → musicDescriptionShelfRenderer
+MusicLyrics music_load_lyrics(const std::string &video_id) {
+	MusicLyrics res;
+	std::string browse_id;
+	res.error = music_api_call("next?prettyPrint=false",
+	                           R"("videoId":")" + json_escape(video_id) + R"(","isAudioOnly":true)", [&](RJson json) {
+		                           RJson tabs = json["contents"]["singleColumnMusicWatchNextResultsRenderer"]
+		                                            ["tabbedRenderer"]["watchNextTabbedResultsRenderer"]["tabs"];
+		                           for (auto tab : tabs.array_items()) {
+			                           RJson endpoint = tab["tabRenderer"]["endpoint"]["browseEndpoint"];
+			                           if (endpoint["browseEndpointContextSupportedConfigs"]
+			                                       ["browseEndpointContextMusicConfig"]["pageType"]
+			                                           .string_value() == "MUSIC_PAGE_TYPE_TRACK_LYRICS") {
+				                           browse_id = endpoint["browseId"].string_value();
+			                           }
+		                           }
+	                           });
+	if (!res.error.empty()) {
+		return res;
+	}
+	if (browse_id.empty()) {
+		return res; // not available, no message
+	}
+	res.error =
+	    music_api_call("browse?prettyPrint=false", R"("browseId":")" + json_escape(browse_id) + "\"", [&](RJson json) {
+		    for (auto content : json["contents"]["sectionListRenderer"]["contents"].array_items()) {
+			    RJson shelf = content["musicDescriptionShelfRenderer"];
+			    if (shelf.is_valid()) {
+				    res.text = runs_text(shelf["description"]);
+				    res.source = runs_text(shelf["footer"]);
+				    res.available = !res.text.empty();
+				    return;
+			    }
+		    }
+		    // "Lyrics not available"
+		    res.message = runs_text(json["contents"]["messageRenderer"]["text"]);
+	    });
+	return res;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------ */
+// signed-in library (see music_parser.hpp for why this uses the regular YouTube API)
+
+#define ACCOUNT_API_URL "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false"
+
+// authenticated ANDROID_VR browse request; `body` : top-level members other than "context"
+// retries once with a refreshed token if the token was rejected
+template <class Func> static std::string account_browse(const std::string &body, Func on_success) {
+	std::string token = OAuth::get_valid_access_token();
+	if (token.empty()) {
+		return "Not signed in";
+	}
+	std::string request_body = R"({"context":{"client":{"hl":")" + language_code + R"(","gl":")" + country_code +
+	                           R"(","clientName":"ANDROID_VR","clientVersion":"1.62.27"}},)" + body + "}";
+	NetworkResult result;
+	for (int attempt = 0; attempt < 2; attempt++) {
+		result = thread_network_session_list.perform(
+		    http_post_json_request(ACCOUNT_API_URL, request_body, {{"Authorization", "Bearer " + token}}));
+		if (result.fail || result.status_code != 401) {
+			break;
+		}
+		debug_music_info("account request rejected (401), refreshing the token");
+		token = OAuth::get_valid_access_token(true);
+		if (token.empty()) {
+			return "Not signed in";
+		}
+	}
+	if (result.fail) {
+		return "Network error : " + result.error;
+	}
+	std::string error;
+	result.data.push_back('\0');
+	parse_json_destructive(
+	    (char *)&result.data[0],
+	    [&](Document &, RJson json) {
+		    if (json.has_key("error")) {
+			    error = "API error : " + json["error"]["message"].string_value();
+		    } else {
+			    on_success(json);
+		    }
+	    },
+	    [&](const std::string &parse_error) { error = "JSON error : " + parse_error; });
+	return error;
+}
+
+static std::string strip_topic_suffix(std::string name) {
+	while (!name.empty() && name.back() == ' ') {
+		name.pop_back();
+	}
+	const std::string suffix = " - Topic";
+	if (ends_with(name, suffix)) {
+		name = name.substr(0, name.size() - suffix.size());
+	}
+	return name;
+}
+
+// appends playlistVideoRenderer items to `tracks` and returns the continuation token of the list ("" if none)
+static std::string parse_account_playlist_items(RJson list, std::vector<MusicTrack> &tracks) {
+	for (auto item : list["contents"].array_items()) {
+		RJson video = item["playlistVideoRenderer"];
+		if (!video.is_valid() || (video.has_key("isPlayable") && !video["isPlayable"].bool_value())) {
+			continue; // deleted / private videos
+		}
+		MusicTrack track;
+		track.video_id = video["videoId"].string_value();
+		if (track.video_id.empty()) {
+			continue;
+		}
+		track.title = runs_text(video["title"]);
+		track.artist = strip_topic_suffix(runs_text(video["shortBylineText"]));
+		track.duration_text = runs_text(video["lengthText"]);
+		tracks.push_back(track); // no thumbnail : the video's thumbnail is used
+	}
+	return list["continuations"][(size_t)0]["nextContinuationData"]["continuation"].string_value();
+}
+
+MusicLibraryResult music_load_library() {
+	MusicLibraryResult res;
+	debug_music_info("library");
+	res.error = account_browse(R"("browseId":"FElibrary")", [&](RJson json) {
+		RJson sections = json["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][(size_t)0]["tabRenderer"]
+		                     ["content"]["sectionListRenderer"]["contents"];
+		for (auto section : sections.array_items()) {
+			for (auto item : section["shelfRenderer"]["content"]["verticalListRenderer"]["items"].array_items()) {
+				RJson playlist = item["compactPlaylistRenderer"];
+				if (!playlist.is_valid()) {
+					continue;
+				}
+				MusicItem cur;
+				cur.type = MusicItem::Type::PLAYLIST;
+				cur.browse_id = playlist["navigationEndpoint"]["browseEndpoint"]["browseId"].string_value();
+				if (cur.browse_id.empty() && playlist["playlistId"].string_value() != "") {
+					cur.browse_id = "VL" + playlist["playlistId"].string_value();
+				}
+				if (cur.browse_id.empty()) {
+					continue;
+				}
+				cur.title = runs_text(playlist["title"]);
+				cur.subtitle = runs_text(playlist["videoCountText"]);
+				auto thumbnails = playlist["thumbnail"]["thumbnails"].array_items();
+				for (auto thumbnail : thumbnails) { // prefer the 320x180 one
+					if (cur.thumbnail_url.empty() || thumbnail["width"].int_value() == 320) {
+						cur.thumbnail_url = thumbnail["url"].string_value();
+					}
+				}
+				res.playlists.push_back(cur);
+			}
+		}
+	});
+	return res;
+}
+
+MusicCollection music_load_account_playlist(const std::string &browse_id) {
+	MusicCollection res;
+	res.kind = MusicCollection::Kind::PLAYLIST;
+	res.browse_id = MUSIC_ACCOUNT_PREFIX + browse_id;
+	res.from_account = true;
+	debug_music_info("account playlist : " + browse_id);
+	res.error = account_browse(R"("browseId":")" + json_escape(browse_id) + "\"", [&](RJson json) {
+		RJson header = json["header"]["playlistHeaderRenderer"];
+		res.title = runs_text(header["title"]);
+		std::string owner = runs_text(header["ownerText"]);
+		std::string count = runs_text(header["numVideosText"]);
+		res.subtitle = owner.empty() ? count : count.empty() ? owner : owner + " • " + count;
+		RJson sections = json["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][(size_t)0]["tabRenderer"]
+		                     ["content"]["sectionListRenderer"]["contents"];
+		for (auto section : sections.array_items()) {
+			if (section.has_key("playlistVideoListRenderer")) {
+				res.continuation = parse_account_playlist_items(section["playlistVideoListRenderer"], res.tracks);
+			}
+		}
+	});
+	if (res.tracks.size()) {
+		res.thumbnail_url = music_video_thumbnail_url(res.tracks[0].video_id);
+	}
+	return res;
+}
+
+static void account_playlist_load_more(MusicCollection &collection) {
+	std::string new_continuation;
+	collection.error = account_browse(R"("continuation":")" + json_escape(collection.continuation) + "\"",
+	                                  [&](RJson json) {
+		                                  new_continuation = parse_account_playlist_items(
+		                                      json["continuationContents"]["playlistVideoListContinuation"],
+		                                      collection.tracks);
+	                                  });
+	collection.continuation = collection.error.empty() ? new_continuation : "";
 }
 
 std::string music_thumbnail_url(const std::string &url, int size) {

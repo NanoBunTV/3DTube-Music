@@ -32,8 +32,9 @@
 #define ACCENT_COLOR 0xFF3333D0
 
 #define TAB_CONTROLS 0
-#define TAB_QUEUE 1
-#define TAB_AUDIO 2
+#define TAB_LYRICS 1
+#define TAB_QUEUE 2
+#define TAB_AUDIO 3
 
 namespace VideoPlayer {
 bool vid_thread_run = false;
@@ -90,6 +91,15 @@ TextView *queue_header_view = NULL;
 int queue_view_version = -1;
 int queue_clicked_position = -1;
 int queue_remove_position = -1;
+ScrollView *lyrics_tab_view = NULL;
+TextView *lyrics_text_view = NULL;
+// lyrics are loaded when the lyrics tab is open; these are protected by `small_resource_lock`
+std::string lyrics_requested_id; // track whose lyrics are loaded or being loaded
+MusicLyrics lyrics_result;
+bool lyrics_loading = false;
+int lyrics_version = 0;
+int lyrics_view_version = -1;
+bool lyrics_dimmed = false; // a status message (loading, not available...) instead of lyrics is shown
 ScrollView *audio_tab_view = NULL;
 CustomView *download_progress_view = NULL;
 OverlayView *equalizer_popup_view = NULL;
@@ -110,6 +120,7 @@ void video_set_should_suspend_decoding(bool should_suspend) { (void)should_suspe
 
 static void load_video_page(void *);
 static void load_radio(void *);
+static void load_lyrics(void *);
 static void decode_thread(void *arg);
 static void position_thread(void *arg);
 static void send_seek_request_wo_lock(double pos);
@@ -367,6 +378,69 @@ void update_queue_views() {
 	}
 	var_need_refresh = true;
 }
+
+// requests the lyrics of the current track while the lyrics tab is open, and rebuilds the lyrics view; UI thread only
+void update_lyrics_views() {
+	static bool was_open = false;
+	bool open = main_view->selected_tab == TAB_LYRICS;
+	std::string current_id = MusicQueue::get_current().video_id;
+
+	small_resource_lock.lock();
+	if (open && !current_id.empty()) {
+		// after an error, retry when the tab is opened again
+		bool retry = !was_open && current_id == lyrics_requested_id && !lyrics_loading && lyrics_result.error != "";
+		if (current_id != lyrics_requested_id || retry) {
+			lyrics_requested_id = current_id;
+			lyrics_result = MusicLyrics();
+			lyrics_loading = true;
+			lyrics_version++;
+			remove_all_async_tasks_with_type(load_lyrics);
+			queue_async_task(load_lyrics, NULL);
+		}
+	}
+	was_open = open;
+
+	int version = current_id.empty() ? -2 : lyrics_version;
+	if (version == lyrics_view_version) {
+		small_resource_lock.unlock();
+		return;
+	}
+	lyrics_view_version = version;
+	MusicLyrics result = lyrics_result;
+	bool loading = lyrics_loading;
+	small_resource_lock.unlock();
+
+	constexpr int LYRICS_WIDTH = 320 - SMALL_MARGIN * 4;
+	std::vector<std::string> lines;
+	lyrics_dimmed = true;
+	if (current_id.empty()) {
+		lines = {LOCALIZED(NOTHING_PLAYING)};
+	} else if (loading) {
+		lines = {LOCALIZED(LOADING)};
+	} else if (result.error != "") {
+		lines = truncate_str(result.error, LYRICS_WIDTH, 5, 0.5, 0.5);
+	} else if (!result.available) {
+		lines = {result.message != "" ? result.message : LOCALIZED(LYRICS_NOT_AVAILABLE)};
+	} else {
+		lyrics_dimmed = false;
+		for (const auto &line : split_string(result.text, '\n')) {
+			if (line.empty()) {
+				lines.push_back("");
+				continue;
+			}
+			auto wrapped = truncate_str(line, LYRICS_WIDTH, 10, 0.5, 0.5);
+			lines.insert(lines.end(), wrapped.begin(), wrapped.end());
+		}
+		if (result.source != "") {
+			lines.push_back("");
+			lines.push_back(result.source);
+		}
+	}
+	lyrics_text_view->set_text_lines(lines);
+	lyrics_text_view->set_height(lines.size() * DEFAULT_FONT_INTERVAL + SMALL_MARGIN * 2);
+	lyrics_tab_view->reset();
+	var_need_refresh = true;
+}
 } // namespace
 
 void VideoPlayer_init(void) {
@@ -430,6 +504,15 @@ void VideoPlayer_init(void) {
 		                                          }
 		                                          small_resource_lock.unlock();
 	                                          })})});
+
+	// lyrics tab
+	lyrics_text_view = (new TextView(0, 0, 320, 0))
+	                       ->set_x_alignment(TextView::XAlign::CENTER)
+	                       ->set_y_alignment(TextView::YAlign::UP)
+	                       ->set_text_offset(0, SMALL_MARGIN)
+	                       ->set_get_text_color([]() { return lyrics_dimmed ? LIGHT1_TEXT_COLOR : DEFAULT_TEXT_COLOR; });
+	lyrics_tab_view = (new ScrollView(0, 0, 320, CONTENT_Y_HIGH))->set_views({lyrics_text_view});
+	lyrics_view_version = -1;
 
 	// queue tab
 	queue_header_view = (new TextView(SMALL_MARGIN, 0, 320 - SMALL_MARGIN, DEFAULT_FONT_INTERVAL + SMALL_MARGIN));
@@ -587,8 +670,9 @@ void VideoPlayer_init(void) {
 	main_view = (new TabView(0, 0, 320, 240 - VIDEO_PLAYING_BAR_HEIGHT))
 	                ->set_stretch_subview(true)
 	                ->set_tab_font_size(0.4)
-	                ->set_views({controls_tab_view, queue_tab_view, audio_tab_view}, TAB_CONTROLS)
+	                ->set_views({controls_tab_view, lyrics_tab_view, queue_tab_view, audio_tab_view}, TAB_CONTROLS)
 	                ->set_tab_texts<std::function<std::string()>>({[]() { return LOCALIZED(NOW_PLAYING); },
+	                                                               []() { return LOCALIZED(LYRICS); },
 	                                                               []() { return LOCALIZED(QUEUE); },
 	                                                               []() { return LOCALIZED(AUDIO); }});
 
@@ -601,18 +685,6 @@ void VideoPlayer_init(void) {
 	                                        DEF_THREAD_PRIORITY_NORMAL, core, false);
 	stream_downloader_thread = threadCreate(network_downloader_thread, &stream_downloader, DEF_STACKSIZE,
 	                                        DEF_THREAD_PRIORITY_NORMAL, 0, false);
-
-	// used by community posts in the channel scene
-	result = Draw_load_texture("romfs:/gfx/draw/thumb_up.t3x", 63, var_texture_thumb_up, 0, 2);
-	if (result.code != 0) {
-		logger.error(DEF_SAPP0_INIT_STR, "Draw_load_texture()..." + result.string + result.error_description,
-		             result.code);
-	}
-	result = Draw_load_texture("romfs:/gfx/draw/thumb_down.t3x", 64, var_texture_thumb_down, 0, 2);
-	if (result.code != 0) {
-		logger.error(DEF_SAPP0_INIT_STR, "Draw_load_texture()..." + result.string + result.error_description,
-		             result.code);
-	}
 
 	vid_current_pos = 0;
 	vid_duration = 0;
@@ -655,9 +727,6 @@ void VideoPlayer_exit(void) {
 	small_resource_lock.unlock();
 
 	remove_cpu_limit(CPU_LIMIT);
-
-	Draw_free_texture(63);
-	Draw_free_texture(64);
 
 	logger.info(DEF_SAPP0_EXIT_STR, "Exited.");
 }
@@ -791,6 +860,30 @@ static void load_radio(void *arg) {
 	small_resource_lock.unlock();
 }
 
+static void load_lyrics(void *) {
+	small_resource_lock.lock();
+	std::string video_id = lyrics_requested_id;
+	small_resource_lock.unlock();
+	if (video_id.empty()) {
+		return;
+	}
+	add_cpu_limit(ADDITIONAL_CPU_LIMIT);
+	MusicLyrics result = music_load_lyrics(video_id);
+	remove_cpu_limit(ADDITIONAL_CPU_LIMIT);
+	if (result.error != "") {
+		logger.warning("player/lyrics", result.error);
+	}
+
+	small_resource_lock.lock();
+	if (vid_already_init && video_id == lyrics_requested_id) { // otherwise another track was requested meanwhile
+		lyrics_result = result;
+		lyrics_loading = false;
+		lyrics_version++;
+		var_need_refresh = true;
+	}
+	small_resource_lock.unlock();
+}
+
 /* ------------------------------------------------------------------------------------------------------------------ */
 // seeking, SponsorBlock
 
@@ -815,16 +908,16 @@ std::vector<bool> segment_skipped;
 
 static std::string category_to_label(const std::string &category) {
 	if (category == "music_offtopic") {
-		return "Non-music section";
+		return LOCALIZED(SB_MUSIC_OFFTOPIC);
 	}
 	if (category == "sponsor") {
-		return "Sponsor";
+		return LOCALIZED(SB_SPONSOR);
 	}
 	if (category == "selfpromo") {
-		return "Self-promotion";
+		return LOCALIZED(SB_SELFPROMO);
 	}
 	if (category == "interaction") {
-		return "Interaction reminder";
+		return LOCALIZED(SB_INTERACTION);
 	}
 	return category;
 }
@@ -1359,6 +1452,7 @@ void VideoPlayer_draw(void) {
 	// note : the views of this scene are only touched from this (UI) thread, so no locking is needed for them.
 	// Don't hold `small_resource_lock` while updating views : their callbacks (play/next...) lock it themselves.
 	update_queue_views();
+	update_lyrics_views();
 
 	if (var_need_refresh || !var_eco_mode) {
 		var_need_refresh = false;

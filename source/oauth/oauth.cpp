@@ -34,6 +34,12 @@ std::string user_photo_url = "";
 std::string user_handle = "";
 std::string user_subscriber_count = "";
 
+// access tokens expire after 1 hour; refresh a bit earlier. The time a token was obtained isn't saved, so a token
+// loaded from the SD card is refreshed on first use.
+#define TOKEN_MAX_AGE_MS (50 * 60 * 1000)
+static u64 token_time = 0; // osGetTime() when `access_token` was obtained, 0 : unknown
+static Mutex refresh_lock;
+
 static NetworkSessionList *session_list = nullptr;
 
 static NetworkSessionList &get_session() {
@@ -205,6 +211,7 @@ void check_device_flow() {
 
 	access_token = response_json["access_token"].string_value();
 	refresh_token = response_json["refresh_token"].string_value();
+	token_time = osGetTime();
 
 	device_code = "";
 	user_code = "";
@@ -265,10 +272,68 @@ void refresh_access_token() {
 	if (response_json.has_key("refresh_token")) {
 		refresh_token = response_json["refresh_token"].string_value();
 	}
+	token_time = osGetTime();
 
 	oauth_state = OAuthState::AUTHENTICATED;
 	save_tokens();
 	fetch_library_data();
+}
+
+// refreshes the access token without touching the account info. A network failure keeps the current state (the
+// old token is kept); only a rejected refresh token signs the user out. Returns whether a new token was obtained.
+static bool refresh_access_token_quietly() {
+	std::string post_data = "client_id=" + std::string(CLIENT_ID) + "&client_secret=" + std::string(CLIENT_SECRET) +
+	                        "&refresh_token=" + refresh_token + "&grant_type=refresh_token";
+	auto result = get_session().perform(
+	    HttpRequest::POST(TOKEN_URL,
+	                      {{"Host", "www.youtube.com"},
+	                       {"User-Agent", "Mozilla/5.0 (Linux; Android 12; Quest 2) AppleWebKit/537.36"},
+	                       {"Content-Type", "application/x-www-form-urlencoded"}},
+	                      post_data));
+	if (result.fail) {
+		logger.warning("OAuth", "token refresh : network error : " + result.error);
+		return false;
+	}
+	result.data.push_back('\0');
+	rapidjson::Document json_root;
+	std::string error;
+	RJson response_json = RJson::parse(json_root, (char *)result.data.data(), error);
+	if (!error.empty() || response_json["access_token"].string_value().empty()) {
+		std::string oauth_error = error.empty() ? response_json["error"].string_value() : error;
+		logger.error("OAuth", "token refresh failed : HTTP " + std::to_string(result.status_code) + " " + oauth_error);
+		if (oauth_error == "invalid_grant") { // the refresh token was revoked or expired : signed out
+			oauth_error_message = "Sign-in expired";
+			oauth_state = OAuthState::ERROR;
+		}
+		return false;
+	}
+	access_token = response_json["access_token"].string_value();
+	if (response_json.has_key("refresh_token")) {
+		refresh_token = response_json["refresh_token"].string_value();
+	}
+	token_time = osGetTime();
+	save_tokens();
+	logger.info("OAuth", "access token refreshed");
+	return true;
+}
+
+std::string get_valid_access_token(bool force_refresh) {
+	refresh_lock.lock();
+	std::string res;
+	if (is_authenticated()) {
+		u64 now = osGetTime();
+		bool expired = token_time == 0 || now - token_time > TOKEN_MAX_AGE_MS;
+		// don't refresh again right after a refresh, even if a request was rejected
+		bool recently_refreshed = token_time != 0 && now - token_time < 60 * 1000;
+		if ((expired || (force_refresh && !recently_refreshed)) && !refresh_token.empty()) {
+			refresh_access_token_quietly();
+		}
+		if (is_authenticated()) {
+			res = access_token;
+		}
+	}
+	refresh_lock.unlock();
+	return res;
 }
 
 RJson fetch_browse_data(const std::string &browse_id) {

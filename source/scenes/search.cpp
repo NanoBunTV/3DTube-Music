@@ -412,12 +412,21 @@ static void access_input_url(void *) {
 		resource_lock.unlock();
 		return;
 	}
+	// channel links open the YouTube Music artist page; only /channel/UC... links carry the id needed for that
+	std::string channel_id;
+	if (page_type == YouTubePageType::CHANNEL) {
+		auto pos = url.find("/channel/UC");
+		if (pos != std::string::npos) {
+			channel_id = url.substr(pos + std::string("/channel/").size());
+			channel_id = channel_id.substr(0, channel_id.find_first_of("/?#&"));
+		}
+	}
 	if (page_type == YouTubePageType::VIDEO) {
 		global_intent.next_scene = SceneType::VIDEO_PLAYER;
 		global_intent.arg = url;
-	} else if (page_type == YouTubePageType::CHANNEL) {
-		global_intent.next_scene = SceneType::CHANNEL;
-		global_intent.arg = url;
+	} else if (channel_id != "") {
+		global_intent.next_scene = SceneType::MUSIC_BROWSE;
+		global_intent.arg = channel_id;
 	} else {
 		toast_view->set_text((std::function<std::string()>)[]() { return LOCALIZED(NOT_A_YOUTUBE_URL); });
 		toast_view->set_is_visible(true);

@@ -12,7 +12,6 @@ bool var_history_enabled = true;
 bool var_oauth_enabled = false;
 int var_autoplay_level = 2; // 0 : never, 1 : only in a playlist, 2 : always
 bool var_show_fps = false;
-bool var_full_dislike_like_count = false;
 bool var_sponsorblock_enabled = true;
 int var_player_response = 2; // 0 : Android, 1 : Android VR, 2 : visionOS (see the player request in youtube_parser/video.cpp)
 double var_forward_buffer_ratio = 0.8;
@@ -42,7 +41,6 @@ bool var_is_new3ds;
 bool var_core2_available;
 bool var_core3_available;
 bool var_app_suspended = false;
-int var_community_image_size = COMMUNITY_IMAGE_SIZE_DEFAULT;
 double var_scroll_speed = 0.5;
 double var_battery_voltage = 0;
 char var_status[128];
@@ -52,5 +50,3 @@ std::string var_lang = "en";
 std::string var_lang_content = "en";
 u8 var_model;
 C2D_Image var_square_image[1];
-C2D_Image var_texture_thumb_up[2];
-C2D_Image var_texture_thumb_down[2];

@@ -59,7 +59,7 @@ PRODUCT_CODE				:= CTR-3TM
 UNIQUE_ID				:= 0xBEA12
 
 BANNER_AUDIO				:= resource/banner.wav
-BANNER_IMAGE				:= resource/banner.cgfx
+BANNER_IMAGE				:= resource/banner.png
 ICON        				:= resource/icon.png
 RSF_PATH				:= resource/app.rsf
 

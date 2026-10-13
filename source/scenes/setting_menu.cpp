@@ -526,19 +526,6 @@ void Sem_init(void) {
 								misc_tasks_request(TASK_SAVE_SETTINGS);
 							}
 						}),
-					// show full dislike/like
-					(new SelectorView(0, 0, 320, 35, true))
-						->set_texts({
-							(std::function<std::string ()>) []() { return LOCALIZED(OFF); },
-							(std::function<std::string ()>) []() { return LOCALIZED(ON); }
-						}, var_full_dislike_like_count)
-						->set_title([](const SelectorView &) { return LOCALIZED(SHOW_FULL_DISLIKE); })
-						->set_on_change([](const SelectorView &view) {
-							if (var_full_dislike_like_count != view.selected_button) {
-								var_full_dislike_like_count = view.selected_button;
-								misc_tasks_request(TASK_SAVE_SETTINGS);
-							}
-						}),
 					// Hide pointer option
 					(new SelectorView(0, 0, 320, 35, true))
 						->set_texts({
@@ -578,8 +565,6 @@ void Sem_init(void) {
 							if (var_disable_pull_to_refresh != view.selected_button) {
 								var_disable_pull_to_refresh = view.selected_button;
 								misc_tasks_request(TASK_SAVE_SETTINGS);
-								Home_rebuild_feed_tab();
-								Home_rebuild_channels_tab();
 								Home_update_pull_to_refresh();
 							}
 						}),
@@ -603,11 +588,6 @@ void Sem_init(void) {
 					(new BarView(0, 0, 320, 40))
 						->set_values_sync(DPAD_SCROLL_THRESHOLD_MIN, DPAD_SCROLL_THRESHOLD_MAX, &var_dpad_scroll_speed1_threshold)
 						->set_title([] (const BarView &view) { return LOCALIZED(SCROLL_SPEED_THRESHOLD) + " : " + double2str(var_dpad_scroll_speed1_threshold, 1); })
-						->set_on_release([] (const BarView &view) { misc_tasks_request(TASK_SAVE_SETTINGS); }),
-					// Size of images in community posts
-					(new BarView(0, 0, 320, 40))
-						->set_values_sync(COMMUNITY_IMAGE_SIZE_MIN, COMMUNITY_IMAGE_SIZE_MAX, &var_community_image_size)
-						->set_title([] (const BarView &view) { return LOCALIZED(COMMUNITY_POST_IMAGE_SIZE) + " : " + std::to_string(var_community_image_size) + " px"; })
 						->set_on_release([] (const BarView &view) { misc_tasks_request(TASK_SAVE_SETTINGS); }),
 					(new EmptyView(0, 0, 320, 10))
 				}),

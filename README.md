@@ -1,5 +1,7 @@
 # 3DTube Music
 
+<img src="resource/art/icon_large.png" alt="3DTube Music icon" width="96" align="right">
+
 A work-in-progress homebrew YouTube Music client for the Nintendo 3DS.
 
 3DTube Music is based on [FourthTube](https://github.com/erievs/FourthTube), which continued
@@ -8,7 +10,8 @@ natively, without running any JavaScript or rendering web pages.
 
 ## Status
 
-Alpha. It hasn't been tested on hardware yet, so expect crashes and bugs. If you find one, please open an issue.
+Alpha. It's tested on a New 3DS; it hasn't been tested on an Old 3DS yet. Expect bugs, and if you find one,
+please open an issue.
 
 ## Features
 
@@ -18,22 +21,24 @@ Alpha. It hasn't been tested on hardware yet, so expect crashes and bugs. If you
    interaction reminders (can be turned off in Settings > Playback)
  - YouTube Music search with Songs / Albums / Artists / Playlists filters
  - Album, playlist and artist pages
+ - YouTube Music home feed
  - Now-playing screen with album art, play queue, shuffle and repeat (off / all / one)
+ - Lyrics (from YouTube Music, when available)
  - Radio: keeps playing similar songs when the queue ends (can be turned off in Settings > Playback)
- - Optional Google account sign-in
- - Local history and subscriptions
+ - Optional Google account sign-in, with a Library tab for your Liked Music and playlists
+ - Listening history
+ - Interface in English, German, French, Spanish, Italian, Brazilian Portuguese and Japanese
 
 ### Planned
 
- - YouTube Music home feed
- - YouTube Music library when signed in (liked songs, saved albums, playlists)
- - Lyrics
+ - Saved albums and artists in the Library
 
 ## Controls
 
  - B button : go back to the previous screen
  - C-pad up/down : scroll
- - L/R : switch between tabs (search filters on the search screen)
+ - L/R : switch between tabs (search filters on the search screen; Now Playing / Lyrics / Queue / Audio in the
+   now-playing screen)
  - Select + Start : blackout the bottom screen
  - Tap a song : play it (the rest of the list is queued after it)
  - Hold a song : play it next

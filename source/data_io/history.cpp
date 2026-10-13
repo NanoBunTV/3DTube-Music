@@ -3,6 +3,7 @@
 #include "util/util.hpp"
 #include "ui/ui.hpp"
 #include "rapidjson_wrapper.hpp"
+#include "youtube_parser/parser.hpp"
 
 using namespace rapidjson;
 

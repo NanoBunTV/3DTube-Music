@@ -4,7 +4,6 @@ enum class SceneType {
 	VIDEO_PLAYER,
 	SEARCH,
 	SETTINGS,
-	CHANNEL,
 	ABOUT,
 	HISTORY,
 	HOME,

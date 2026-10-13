@@ -16,6 +16,7 @@
 #include "util/util.hpp"
 #include "music/music_parser.hpp"
 #include "music/queue.hpp"
+#include "oauth/oauth.hpp"
 
 #define TAB_SELECTOR_HEIGHT 20
 #define EQUALIZER_POPUP_WIDTH 280
@@ -100,6 +101,24 @@ bool lyrics_loading = false;
 int lyrics_version = 0;
 int lyrics_view_version = -1;
 bool lyrics_dimmed = false; // a status message (loading, not available...) instead of lyrics is shown
+// like status of the current track (signed in only); protected by `small_resource_lock`
+enum class LikeState { UNKNOWN, LOADING, LIKED, NOT_LIKED };
+std::string like_video_id; // track `like_state` is for
+volatile LikeState like_state = LikeState::UNKNOWN;
+bool like_request_value = false; // pending like/unlike sent by send_like
+std::string like_request_video_id;
+// "add to playlist" popup; data protected by `small_resource_lock`, views UI thread only
+OverlayView *playlist_popup_view = NULL;
+ScrollView *playlist_options_view = NULL;
+std::string playlist_options_video_id;
+std::vector<MusicPlaylistOption> playlist_options;
+bool playlist_options_loading = false;
+std::string playlist_options_error;
+int playlist_options_version = 0;
+int playlist_options_view_version = -1;
+int clicked_playlist_option = -1;   // UI thread
+bool new_playlist_requested = false; // UI thread
+std::string new_playlist_title;
 ScrollView *audio_tab_view = NULL;
 CustomView *download_progress_view = NULL;
 OverlayView *equalizer_popup_view = NULL;
@@ -121,6 +140,11 @@ void video_set_should_suspend_decoding(bool should_suspend) { (void)should_suspe
 static void load_video_page(void *);
 static void load_radio(void *);
 static void load_lyrics(void *);
+static void load_like_status(void *);
+static void send_like(void *);
+static void load_playlist_options(void *);
+static void toggle_playlist_option(void *);
+static void create_playlist(void *);
 static void decode_thread(void *arg);
 static void position_thread(void *arg);
 static void send_seek_request_wo_lock(double pos);
@@ -335,6 +359,77 @@ CustomView *make_transport_view() {
 	    });
 }
 
+void open_playlist_popup();
+void on_like_pressed();
+
+// title + artist, with "add to playlist" (left) and like (right) buttons
+constexpr int TITLE_ROW_HEIGHT = 38;
+constexpr int TITLE_ICON_WIDTH = 38; // touch area of each button
+int title_icon_pressed = -1;         // 0 : add to playlist, 1 : like
+
+void draw_add_to_playlist_icon(float x, float y, u32 color) { // three lines and a plus, 18x14
+	C2D_DrawRectSolid(x, y, 0, 12, 2, color);
+	C2D_DrawRectSolid(x, y + 5, 0, 12, 2, color);
+	C2D_DrawRectSolid(x, y + 10, 0, 7, 2, color);
+	C2D_DrawRectSolid(x + 13, y + 6, 0, 2, 8, color);
+	C2D_DrawRectSolid(x + 10, y + 9, 0, 8, 2, color);
+}
+
+CustomView *make_title_view() {
+	return (new CustomView(0, 0, 320, TITLE_ROW_HEIGHT))
+	    ->set_draw([](const CustomView &view) {
+		    MusicTrack track = MusicQueue::get_current();
+		    if (track.video_id.empty()) {
+			    Draw_x_centered(LOCALIZED(NOTHING_PLAYING), 0, 320, view.y0 + 10, 0.5, 0.5, LIGHT1_TEXT_COLOR);
+			    return;
+		    }
+		    constexpr int TEXT_WIDTH = 320 - TITLE_ICON_WIDTH * 2 - SMALL_MARGIN * 2;
+		    auto title =
+		        truncate_str(track.title.empty() ? LOCALIZED(LOADING) : track.title, TEXT_WIDTH, 1, 0.55, 0.55);
+		    auto artist = truncate_str(track.artist, TEXT_WIDTH, 1, 0.45, 0.45);
+		    Draw_x_centered(title.size() ? title[0] : "", TITLE_ICON_WIDTH, 320 - TITLE_ICON_WIDTH, view.y0 + 4, 0.55,
+		                    0.55, DEFAULT_TEXT_COLOR);
+		    Draw_x_centered(artist.size() ? artist[0] : "", TITLE_ICON_WIDTH, 320 - TITLE_ICON_WIDTH, view.y0 + 21,
+		                    0.45, 0.45, LIGHT1_TEXT_COLOR);
+
+		    for (int i : {0, 1}) {
+			    if (title_icon_pressed == i) {
+				    float cx = i == 0 ? TITLE_ICON_WIDTH / 2 : 320 - TITLE_ICON_WIDTH / 2;
+				    C2D_DrawCircleSolid(cx, view.y0 + TITLE_ROW_HEIGHT / 2, 0, 15, LIGHT0_BACK_COLOR);
+			    }
+		    }
+		    u32 icon_color = OAuth::is_authenticated() ? DEFAULT_TEXT_COLOR : LIGHT1_TEXT_COLOR;
+		    draw_add_to_playlist_icon(TITLE_ICON_WIDTH / 2 - 9, view.y0 + TITLE_ROW_HEIGHT / 2 - 7, icon_color);
+		    bool liked = like_state == LikeState::LIKED;
+		    Draw_x_centered("♥", 320 - TITLE_ICON_WIDTH, 320, view.y0 + 6, 0.8, 0.8,
+		                    liked ? (u32)ACCENT_COLOR : icon_color);
+	    })
+	    ->set_update([](CustomView &view, Hid_info key) {
+		    auto icon_at = [&](int x, int y) {
+			    if (y < view.y0 || y >= view.y0 + TITLE_ROW_HEIGHT || MusicQueue::get_current().video_id.empty()) {
+				    return -1;
+			    }
+			    return x < TITLE_ICON_WIDTH ? 0 : x >= 320 - TITLE_ICON_WIDTH ? 1 : -1;
+		    };
+		    if (key.p_touch) {
+			    title_icon_pressed = icon_at(key.touch_x, key.touch_y);
+			    var_need_refresh = true;
+		    } else if (title_icon_pressed != -1 && !key.h_touch) {
+			    int pressed = title_icon_pressed;
+			    title_icon_pressed = -1;
+			    if (pressed == 0) {
+				    open_playlist_popup();
+			    } else {
+				    on_like_pressed();
+			    }
+			    var_need_refresh = true;
+		    } else if (title_icon_pressed != -1 && icon_at(key.touch_x, key.touch_y) != title_icon_pressed) {
+			    title_icon_pressed = -1; // dragged away : cancel
+			    var_need_refresh = true;
+		    }
+	    });
+}
+
 // rebuilds the queue list if the queue changed; UI thread only
 void update_queue_views() {
 	int version = MusicQueue::get_version();
@@ -441,6 +536,120 @@ void update_lyrics_views() {
 	lyrics_tab_view->reset();
 	var_need_refresh = true;
 }
+
+void show_sign_in_required() {
+	std::string text = LOCALIZED(SIGN_IN_REQUIRED);
+	auto pos = text.find("%0");
+	if (pos != std::string::npos) {
+		text.replace(pos, 2, LOCALIZED(SETTINGS) + " > " + LOCALIZED(SETTINGS_ADVANCED));
+	}
+	music_player_show_notice(text);
+}
+
+// requests the like status of the current track when it changes (signed in only); UI thread only
+void update_like_status() {
+	if (!OAuth::is_authenticated()) {
+		return;
+	}
+	std::string current_id = MusicQueue::get_current().video_id;
+	small_resource_lock.lock();
+	if (current_id != like_video_id) {
+		like_video_id = current_id;
+		like_state = current_id.empty() ? LikeState::UNKNOWN : LikeState::LOADING;
+		remove_all_async_tasks_with_type(load_like_status);
+		if (!current_id.empty()) {
+			queue_async_task(load_like_status, NULL);
+		}
+		var_need_refresh = true;
+	}
+	small_resource_lock.unlock();
+}
+
+void on_like_pressed() {
+	if (!OAuth::is_authenticated()) {
+		show_sign_in_required();
+		return;
+	}
+	small_resource_lock.lock();
+	if ((like_state == LikeState::LIKED || like_state == LikeState::NOT_LIKED) && !is_async_task_running(send_like)) {
+		bool like = like_state == LikeState::NOT_LIKED;
+		like_state = like ? LikeState::LIKED : LikeState::NOT_LIKED; // shown right away, reverted if it fails
+		like_request_value = like;
+		like_request_video_id = like_video_id;
+		queue_async_task(send_like, NULL);
+	}
+	small_resource_lock.unlock();
+	var_need_refresh = true;
+}
+
+void open_playlist_popup() {
+	if (!OAuth::is_authenticated()) {
+		show_sign_in_required();
+		return;
+	}
+	std::string current_id = MusicQueue::get_current().video_id;
+	if (current_id.empty()) {
+		return;
+	}
+	small_resource_lock.lock();
+	playlist_options_video_id = current_id;
+	playlist_options.clear();
+	playlist_options_error = "";
+	playlist_options_loading = true;
+	playlist_options_version++;
+	remove_all_async_tasks_with_type(load_playlist_options);
+	queue_async_task(load_playlist_options, NULL);
+	small_resource_lock.unlock();
+	playlist_options_view->reset();
+	playlist_popup_view->set_is_visible(true);
+	var_need_refresh = true;
+}
+
+// rebuilds the playlist list of the popup when it changed; UI thread only
+void update_playlist_popup_views() {
+	small_resource_lock.lock();
+	if (playlist_options_version == playlist_options_view_version) {
+		small_resource_lock.unlock();
+		return;
+	}
+	playlist_options_view_version = playlist_options_version;
+	auto options = playlist_options;
+	bool loading = playlist_options_loading;
+	std::string error = playlist_options_error;
+	small_resource_lock.unlock();
+
+	constexpr int WIDTH = EQUALIZER_POPUP_WIDTH;
+	std::vector<View *> views;
+	auto status_view = [&](const std::string &text) {
+		auto lines = truncate_str(text, WIDTH - SMALL_MARGIN * 4, 3, 0.5, 0.5);
+		return (new TextView(0, 0, WIDTH, DEFAULT_FONT_INTERVAL * lines.size() + SMALL_MARGIN * 2))
+		    ->set_text_lines(lines)
+		    ->set_x_alignment(TextView::XAlign::CENTER);
+	};
+	if (loading) {
+		views.push_back(status_view(LOCALIZED(LOADING)));
+	} else if (error != "") {
+		views.push_back(status_view(error));
+	} else if (options.empty()) {
+		views.push_back(status_view(LOCALIZED(NO_PLAYLISTS)));
+	} else {
+		for (size_t i = 0; i < options.size(); i++) {
+			auto title = truncate_str(options[i].title, WIDTH - SMALL_MARGIN * 2 - 20, 1, 0.5, 0.5);
+			bool contains = options[i].contains_video;
+			// a check mark for playlists that already contain the song
+			TextView *view = (new TextView(0, 0, WIDTH, DEFAULT_FONT_INTERVAL + SMALL_MARGIN * 2))
+			                     ->set_text(std::string(contains ? "✓ " : "    ") + (title.size() ? title[0] : ""))
+			                     ->set_text_offset(0, -1);
+			view->set_get_text_color([contains]() { return contains ? (u32)ACCENT_COLOR : DEFAULT_TEXT_COLOR; });
+			view->set_get_background_color(View::STANDARD_BACKGROUND);
+			view->set_on_view_released([i](View &) { clicked_playlist_option = i; });
+			views.push_back(view);
+		}
+	}
+	playlist_options_view->recursive_delete_subviews();
+	playlist_options_view->set_views(views);
+	var_need_refresh = true;
+}
 } // namespace
 
 void VideoPlayer_init(void) {
@@ -453,21 +662,7 @@ void VideoPlayer_init(void) {
 	controls_tab_view =
 	    (new VerticalListView(0, 0, 320))
 	        ->set_views(
-	            {(new CustomView(0, 0, 320, 38))->set_draw([](const CustomView &view) {
-		             MusicTrack track = MusicQueue::get_current();
-		             if (track.video_id.empty()) {
-			             Draw_x_centered(LOCALIZED(NOTHING_PLAYING), 0, 320, view.y0 + 10, 0.5, 0.5,
-			                             LIGHT1_TEXT_COLOR);
-			             return;
-		             }
-		             auto title = truncate_str(track.title.empty() ? LOCALIZED(LOADING) : track.title,
-		                                       320 - SMALL_MARGIN * 4, 1, 0.55, 0.55);
-		             auto artist = truncate_str(track.artist, 320 - SMALL_MARGIN * 4, 1, 0.45, 0.45);
-		             Draw_x_centered(title.size() ? title[0] : "", 0, 320, view.y0 + 4, 0.55, 0.55,
-		                             DEFAULT_TEXT_COLOR);
-		             Draw_x_centered(artist.size() ? artist[0] : "", 0, 320, view.y0 + 21, 0.45, 0.45,
-		                             LIGHT1_TEXT_COLOR);
-	             }),
+	            {make_title_view(),
 	             make_transport_view(),
 	             (new HorizontalListView(0, 0, 26))
 	                 ->set_views({new EmptyView(0, 0, 10, 26),
@@ -667,6 +862,37 @@ void VideoPlayer_init(void) {
 	        ->set_draw_order({2, 0, 1, 3}));
 	equalizer_popup_view->set_is_visible(false);
 
+	// "add to playlist" popup
+	playlist_popup_view = (new OverlayView(0, 0, 320, 240 - VIDEO_PLAYING_BAR_HEIGHT));
+	playlist_options_view = new ScrollView(0, 0, EQUALIZER_POPUP_WIDTH, EQUALIZER_POPUP_HEIGHT - 60);
+	playlist_options_view->set_get_background_color([](const View &) { return DEFAULT_BACK_COLOR; });
+	auto popup_button = [](std::function<std::string()> text, std::function<void()> on_press) {
+		return (new TextView(0, 0, EQUALIZER_POPUP_WIDTH, 20))
+		    ->set_text(text)
+		    ->set_x_alignment(TextView::XAlign::CENTER)
+		    ->set_on_view_released([on_press](View &) { on_press(); })
+		    ->set_get_background_color(View::STANDARD_BACKGROUND);
+	};
+	playlist_popup_view->set_subview(
+	    (new VerticalListView(0, 0, EQUALIZER_POPUP_WIDTH))
+	        ->set_views({(new TextView(0, 0, EQUALIZER_POPUP_WIDTH, 19))
+	                         ->set_text([]() { return LOCALIZED(ADD_TO_PLAYLIST); })
+	                         ->set_x_alignment(TextView::XAlign::CENTER)
+	                         ->set_get_background_color([](const View &) { return DEFAULT_BACK_COLOR; }),
+	                     (new RuleView(0, 0, EQUALIZER_POPUP_WIDTH, 1))->set_margin(0),
+	                     playlist_options_view,
+	                     (new RuleView(0, 0, EQUALIZER_POPUP_WIDTH, 1))->set_margin(0),
+	                     popup_button([]() { return "+ " + LOCALIZED(NEW_PLAYLIST); },
+	                                  []() { new_playlist_requested = true; }),
+	                     popup_button([]() { return LOCALIZED(CLOSE); },
+	                                  []() {
+		                                  playlist_popup_view->set_is_visible(false);
+		                                  var_need_refresh = true;
+	                                  })})
+	        ->set_draw_order({2, 0, 1, 3, 4, 5}));
+	playlist_popup_view->set_is_visible(false);
+	playlist_options_view_version = -1;
+
 	main_view = (new TabView(0, 0, 320, 240 - VIDEO_PLAYING_BAR_HEIGHT))
 	                ->set_stretch_subview(true)
 	                ->set_tab_font_size(0.4)
@@ -724,6 +950,10 @@ void VideoPlayer_exit(void) {
 	equalizer_popup_view->recursive_delete_subviews();
 	delete equalizer_popup_view;
 	equalizer_popup_view = NULL;
+	playlist_popup_view->recursive_delete_subviews();
+	delete playlist_popup_view;
+	playlist_popup_view = NULL;
+	playlist_options_view = NULL;
 	small_resource_lock.unlock();
 
 	remove_cpu_limit(CPU_LIMIT);
@@ -882,6 +1112,137 @@ static void load_lyrics(void *) {
 		var_need_refresh = true;
 	}
 	small_resource_lock.unlock();
+}
+
+// signed-in actions
+
+static void load_like_status(void *) {
+	small_resource_lock.lock();
+	std::string video_id = like_video_id;
+	small_resource_lock.unlock();
+	if (video_id.empty()) {
+		return;
+	}
+	bool liked = false;
+	std::string error = music_get_like_status(video_id, liked);
+	if (error != "") {
+		logger.warning("player/like", error);
+	}
+	small_resource_lock.lock();
+	if (vid_already_init && video_id == like_video_id) {
+		like_state = error != "" ? LikeState::UNKNOWN : liked ? LikeState::LIKED : LikeState::NOT_LIKED;
+		var_need_refresh = true;
+	}
+	small_resource_lock.unlock();
+}
+
+static void send_like(void *) {
+	small_resource_lock.lock();
+	std::string video_id = like_request_video_id;
+	bool like = like_request_value;
+	small_resource_lock.unlock();
+
+	std::string error = music_set_like(video_id, like);
+	if (error != "") {
+		logger.error("player/like", error);
+		small_resource_lock.lock();
+		if (video_id == like_video_id) { // revert the button
+			like_state = like ? LikeState::NOT_LIKED : LikeState::LIKED;
+		}
+		small_resource_lock.unlock();
+		music_player_show_notice(LOCALIZED(ACTION_FAILED));
+	} else {
+		// YouTube files likes made with the TV sign-in under Liked videos, not Liked Music (see YOUTUBE_API.md)
+		music_player_show_notice(like ? LOCALIZED(ADDED_TO_LIKED_VIDEOS) : LOCALIZED(REMOVED_FROM_LIKED_VIDEOS));
+	}
+	var_need_refresh = true;
+}
+
+static void load_playlist_options(void *) {
+	small_resource_lock.lock();
+	std::string video_id = playlist_options_video_id;
+	small_resource_lock.unlock();
+
+	std::string error;
+	auto options = music_get_add_to_playlist(video_id, error);
+	if (error != "") {
+		logger.error("player/playlists", error);
+	}
+	small_resource_lock.lock();
+	if (vid_already_init && video_id == playlist_options_video_id) {
+		playlist_options = options;
+		playlist_options_error = error;
+		playlist_options_loading = false;
+		playlist_options_version++;
+		var_need_refresh = true;
+	}
+	small_resource_lock.unlock();
+}
+
+// arg : index in `playlist_options`
+static void toggle_playlist_option(void *arg) {
+	size_t index = (size_t)arg;
+	small_resource_lock.lock();
+	if (index >= playlist_options.size()) {
+		small_resource_lock.unlock();
+		return;
+	}
+	MusicPlaylistOption option = playlist_options[index];
+	std::string video_id = playlist_options_video_id;
+	small_resource_lock.unlock();
+
+	bool add = !option.contains_video;
+	std::string error = music_edit_playlist(option.playlist_id, video_id, add);
+	if (error != "") {
+		logger.error("player/playlists", error);
+		music_player_show_notice(LOCALIZED(ACTION_FAILED));
+		return;
+	}
+	small_resource_lock.lock();
+	if (video_id == playlist_options_video_id && index < playlist_options.size() &&
+	    playlist_options[index].playlist_id == option.playlist_id) {
+		playlist_options[index].contains_video = add;
+		playlist_options_version++;
+	}
+	small_resource_lock.unlock();
+	std::string notice = add ? LOCALIZED(ADDED_TO_PLAYLIST_NAME) : LOCALIZED(REMOVED_FROM_PLAYLIST_NAME);
+	auto pos = notice.find("%0");
+	if (pos != std::string::npos) {
+		notice.replace(pos, 2, option.title);
+	}
+	music_player_show_notice(notice);
+}
+
+static void create_playlist(void *) {
+	small_resource_lock.lock();
+	std::string title = new_playlist_title;
+	std::string video_id = playlist_options_video_id;
+	small_resource_lock.unlock();
+
+	std::string playlist_id;
+	std::string error = music_create_playlist(title, video_id, playlist_id);
+	if (error != "") {
+		logger.error("player/playlists", error);
+		music_player_show_notice(LOCALIZED(ACTION_FAILED));
+		return;
+	}
+	small_resource_lock.lock();
+	if (video_id == playlist_options_video_id) {
+		MusicPlaylistOption option;
+		option.playlist_id = playlist_id;
+		option.title = title;
+		option.privacy = "PRIVATE";
+		option.contains_video = true;
+		playlist_options.insert(playlist_options.begin(), option);
+		playlist_options_version++;
+	}
+	small_resource_lock.unlock();
+	std::string notice = LOCALIZED(ADDED_TO_PLAYLIST_NAME);
+	auto pos = notice.find("%0");
+	if (pos != std::string::npos) {
+		notice.replace(pos, 2, title);
+	}
+	music_player_show_notice(notice);
 }
 
 /* ------------------------------------------------------------------------------------------------------------------ */
@@ -1453,6 +1814,8 @@ void VideoPlayer_draw(void) {
 	// Don't hold `small_resource_lock` while updating views : their callbacks (play/next...) lock it themselves.
 	update_queue_views();
 	update_lyrics_views();
+	update_like_status();
+	update_playlist_popup_views();
 
 	if (var_need_refresh || !var_eco_mode) {
 		var_need_refresh = false;
@@ -1465,6 +1828,7 @@ void VideoPlayer_draw(void) {
 		video_draw_playing_bar();
 		draw_overlay_menu(240 - VIDEO_PLAYING_BAR_HEIGHT - TAB_SELECTOR_HEIGHT - OVERLAY_MENU_ICON_SIZE);
 		equalizer_popup_view->draw();
+		playlist_popup_view->draw();
 
 		if (Util_expl_query_show_flag()) {
 			Util_expl_draw();
@@ -1486,8 +1850,44 @@ void VideoPlayer_draw(void) {
 		update_overlay_menu(&key);
 		if (equalizer_popup_view->is_visible) {
 			equalizer_popup_view->update(key);
+		} else if (playlist_popup_view->is_visible) {
+			playlist_popup_view->update(key);
 		} else {
 			main_view->update(key);
+		}
+		// "add to playlist" popup actions (one change at a time)
+		bool playlist_edit_running =
+		    is_async_task_running(toggle_playlist_option) || is_async_task_running(create_playlist);
+		if (clicked_playlist_option != -1) {
+			if (!playlist_edit_running) {
+				queue_async_task(toggle_playlist_option, (void *)(size_t)clicked_playlist_option);
+			}
+			clicked_playlist_option = -1;
+		}
+		if (new_playlist_requested) {
+			new_playlist_requested = false;
+			if (!playlist_edit_running) {
+				SwkbdState keyboard;
+				swkbdInit(&keyboard, SWKBD_TYPE_NORMAL, 2, 150);
+				swkbdSetFeatures(&keyboard, SWKBD_DEFAULT_QWERTY | SWKBD_PREDICTIVE_INPUT);
+				swkbdSetValidation(&keyboard, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
+				swkbdSetHintText(&keyboard, LOCALIZED(NEW_PLAYLIST_NAME).c_str());
+				swkbdSetButton(&keyboard, SWKBD_BUTTON_LEFT, LOCALIZED(CANCEL).c_str(), false);
+				swkbdSetButton(&keyboard, SWKBD_BUTTON_RIGHT, LOCALIZED(OK).c_str(), true);
+				char title[151];
+				add_cpu_limit(40);
+				video_set_skip_drawing(true);
+				auto button_pressed = swkbdInputText(&keyboard, title, 150);
+				video_set_skip_drawing(false);
+				remove_cpu_limit(40);
+				if (button_pressed == SWKBD_BUTTON_RIGHT) {
+					small_resource_lock.lock();
+					new_playlist_title = title;
+					small_resource_lock.unlock();
+					queue_async_task(create_playlist, NULL);
+				}
+				var_need_refresh = true;
+			}
 		}
 		int clicked = queue_clicked_position;
 		int remove = queue_remove_position;
@@ -1514,6 +1914,9 @@ void VideoPlayer_draw(void) {
 			small_resource_lock.lock();
 			vid_play_request = false;
 			small_resource_lock.unlock();
+		} else if (key.p_b && playlist_popup_view->is_visible) {
+			playlist_popup_view->set_is_visible(false);
+			var_need_refresh = true;
 		} else if (key.p_b) {
 			global_intent.next_scene = SceneType::BACK;
 		} else if (key.p_y && !key.h_select) { // Select + Y / X are debug shortcuts

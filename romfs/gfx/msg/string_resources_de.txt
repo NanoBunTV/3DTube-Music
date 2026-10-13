@@ -131,3 +131,13 @@
 <LIBRARY>Mediathek</LIBRARY>
 <LIKED_MUSIC>Positiv bewertete Musik</LIKED_MUSIC>
 <LIBRARY_SIGN_IN_HINT>Melde dich unter %0 an, um hier deine Playlists zu sehen.</LIBRARY_SIGN_IN_HINT>
+<SIGN_IN_REQUIRED>Melde dich unter %0 an, um das zu nutzen</SIGN_IN_REQUIRED>
+<ADD_TO_PLAYLIST>Zu Playlist hinzufügen</ADD_TO_PLAYLIST>
+<NEW_PLAYLIST>Neue Playlist</NEW_PLAYLIST>
+<NEW_PLAYLIST_NAME>Name der Playlist</NEW_PLAYLIST_NAME>
+<NO_PLAYLISTS>Du hast noch keine Playlists</NO_PLAYLISTS>
+<ACTION_FAILED>Änderung konnte nicht gespeichert werden</ACTION_FAILED>
+<ADDED_TO_LIKED_VIDEOS>Zu Videos mit „Mag ich“-Bewertung hinzugefügt</ADDED_TO_LIKED_VIDEOS>
+<REMOVED_FROM_LIKED_VIDEOS>Aus Videos mit „Mag ich“-Bewertung entfernt</REMOVED_FROM_LIKED_VIDEOS>
+<ADDED_TO_PLAYLIST_NAME>Zu %0 hinzugefügt</ADDED_TO_PLAYLIST_NAME>
+<REMOVED_FROM_PLAYLIST_NAME>Aus %0 entfernt</REMOVED_FROM_PLAYLIST_NAME>

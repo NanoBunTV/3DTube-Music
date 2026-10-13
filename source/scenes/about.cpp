@@ -86,7 +86,7 @@ void About_init(void) {
 	                        ->set_x_alignment(TextView::XAlign::CENTER)
 	                        ->set_font_size(MIDDLE_FONT_SIZE, MIDDLE_FONT_INTERVAL),
 	                    (new TextView(0, 0, 320, DEFAULT_FONT_INTERVAL))
-	                        ->set_text("Version " + DEF_CURRENT_APP_VER)
+	                        ->set_text("Version " + DEF_CURRENT_APP_VER + " (based on " + DEF_BASED_ON_VER + ")")
 	                        ->set_get_text_color([]() { return LIGHT0_TEXT_COLOR; })
 	                        ->set_x_alignment(TextView::XAlign::CENTER),
 	                    (new TextView(0, 0, 320, DEFAULT_FONT_INTERVAL))

@@ -127,3 +127,13 @@
 <LIBRARY>Biblioteca</LIBRARY>
 <LIKED_MUSIC>Músicas curtidas</LIKED_MUSIC>
 <LIBRARY_SIGN_IN_HINT>Faça login em %0 para ver suas playlists aqui.</LIBRARY_SIGN_IN_HINT>
+<SIGN_IN_REQUIRED>Faça login em %0 para usar isto</SIGN_IN_REQUIRED>
+<ADD_TO_PLAYLIST>Adicionar à playlist</ADD_TO_PLAYLIST>
+<NEW_PLAYLIST>Nova playlist</NEW_PLAYLIST>
+<NEW_PLAYLIST_NAME>Nome da playlist</NEW_PLAYLIST_NAME>
+<NO_PLAYLISTS>Você ainda não tem playlists</NO_PLAYLISTS>
+<ACTION_FAILED>Não foi possível salvar a alteração</ACTION_FAILED>
+<ADDED_TO_LIKED_VIDEOS>Adicionado aos vídeos curtidos</ADDED_TO_LIKED_VIDEOS>
+<REMOVED_FROM_LIKED_VIDEOS>Removido dos vídeos curtidos</REMOVED_FROM_LIKED_VIDEOS>
+<ADDED_TO_PLAYLIST_NAME>Adicionada a %0</ADDED_TO_PLAYLIST_NAME>
+<REMOVED_FROM_PLAYLIST_NAME>Removida de %0</REMOVED_FROM_PLAYLIST_NAME>

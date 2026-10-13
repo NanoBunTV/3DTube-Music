@@ -131,3 +131,13 @@
 <LIBRARY>Bibliothèque</LIBRARY>
 <LIKED_MUSIC>Titres J'aime</LIKED_MUSIC>
 <LIBRARY_SIGN_IN_HINT>Connectez-vous dans %0 pour voir vos playlists ici.</LIBRARY_SIGN_IN_HINT>
+<SIGN_IN_REQUIRED>Connectez-vous dans %0 pour utiliser cette fonction</SIGN_IN_REQUIRED>
+<ADD_TO_PLAYLIST>Ajouter à une playlist</ADD_TO_PLAYLIST>
+<NEW_PLAYLIST>Nouvelle playlist</NEW_PLAYLIST>
+<NEW_PLAYLIST_NAME>Nom de la playlist</NEW_PLAYLIST_NAME>
+<NO_PLAYLISTS>Vous n'avez pas encore de playlist</NO_PLAYLISTS>
+<ACTION_FAILED>Impossible d'enregistrer la modification</ACTION_FAILED>
+<ADDED_TO_LIKED_VIDEOS>Ajouté aux vidéos J'aime</ADDED_TO_LIKED_VIDEOS>
+<REMOVED_FROM_LIKED_VIDEOS>Retiré des vidéos J'aime</REMOVED_FROM_LIKED_VIDEOS>
+<ADDED_TO_PLAYLIST_NAME>Ajouté à %0</ADDED_TO_PLAYLIST_NAME>
+<REMOVED_FROM_PLAYLIST_NAME>Retiré de %0</REMOVED_FROM_PLAYLIST_NAME>

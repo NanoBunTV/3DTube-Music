@@ -215,7 +215,7 @@ static void update_worker_thread_func(void *) {
 			if (UPDATE_RELEASES_API_URL.empty()) new_error_message = "Update checks are disabled in this build";
 			else result = session_list.perform(HttpRequest::GET(UPDATE_RELEASES_API_URL, {}));
 			if (new_error_message != "") ;
-			else if (result.fail) new_error_message = "Failed accessing(deep fail) : " + result.fail;
+			else if (result.fail) new_error_message = "Failed accessing(deep fail) : " + result.error;
 			else if (result.status_code == 200) {
 				result.data.push_back('\0');
 				rapidjson::Document json_root;

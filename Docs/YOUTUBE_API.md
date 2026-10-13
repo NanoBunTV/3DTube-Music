@@ -80,6 +80,18 @@ The app signs in with YouTube's **TV device flow** (client id in `source/oauth/o
 | ANDROID_VR `FEplaylist_aggregation` | empty |
 | TVHTML5 `FEmusic_liked_playlists`, `FElibrary`, `VLLM` | OK, but TV-style `tvBrowseRenderer` / `tileRenderer` shapes. `FEmusic_liked_playlists` here returns the actual YouTube Music library list (incl. Liked Music); a possible alternative if ANDROID_VR stops working |
 
+Write actions (ANDROID_VR + token), checked 2026-10-13 with `Docs/tools/probe_actions.py` (every change undone) :
+
+| Action | Request | Result |
+|---|---|---|
+| Like status | `next` + `videoId` | `contents.singleColumnWatchNextResults.results.watchNextTabbedResultsRenderer.tabs[].tabRenderer.content.sectionListRenderer.contents[].itemSectionRenderer.contents[].videoMetadataRenderer.likeButton.likeButtonRenderer.likeStatus` = `LIKE` / `INDIFFERENT` |
+| Like / unlike | `like/like`, `like/removelike` + `target.videoId` | HTTP 200. **The like is a YouTube like : the song goes to Liked videos (`LL`), not Liked Music (`LM`)**, even for a song (ATV) and after waiting (owner report + `Docs/tools/probe_like_music.py`, 2026-10-13). An earlier note here said they appear in Liked Music : that was wrong |
+| Like into Liked Music | `like/like` with WEB_REMIX, ANDROID_MUSIC or IOS_MUSIC; `browse/edit_playlist` on `LM` (ANDROID_VR) | All **HTTP 400** with the TV token. With this sign-in there's no way to add to Liked Music; TVHTML5 `like/like` also only lands in Liked videos |
+| Playlists to add to | `playlist/get_add_to_playlist` + `videoIds: [id]` | `contents[].addToPlaylistRenderer.playlists[].playlistAddToOptionRenderer` : `playlistId`, `title`, `privacy`, `containsSelectedVideos` (`NONE` / `ALL`). Includes Watch later (`WL`, skipped by the app). A just-created playlist may not be listed yet |
+| Add / remove | `browse/edit_playlist` + `playlistId` + `actions: [{action: ACTION_ADD_VIDEO, addedVideoId}]` / `ACTION_REMOVE_VIDEO_BY_VIDEO_ID` + `removedVideoId` | `status: STATUS_SUCCEEDED` |
+| New playlist | `playlist/create` + `title`, `privacyStatus: PRIVATE`, `videoIds` | `playlistId` |
+| Delete playlist (probe only) | `playlist/delete` + `playlistId` | HTTP 200 |
+
 Access tokens last 1 hour. `OAuth::get_valid_access_token()` refreshes them (when older than 50 minutes, on first
 use after launch, or after an HTTP 401) and only signs the user out if the refresh token is rejected
 (`invalid_grant`).

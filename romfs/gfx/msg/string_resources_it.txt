@@ -127,3 +127,13 @@
 <LIBRARY>Raccolta</LIBRARY>
 <LIKED_MUSIC>Brani piaciuti</LIKED_MUSIC>
 <LIBRARY_SIGN_IN_HINT>Accedi da %0 per vedere qui le tue playlist.</LIBRARY_SIGN_IN_HINT>
+<SIGN_IN_REQUIRED>Accedi da %0 per usare questa funzione</SIGN_IN_REQUIRED>
+<ADD_TO_PLAYLIST>Aggiungi a playlist</ADD_TO_PLAYLIST>
+<NEW_PLAYLIST>Nuova playlist</NEW_PLAYLIST>
+<NEW_PLAYLIST_NAME>Nome della playlist</NEW_PLAYLIST_NAME>
+<NO_PLAYLISTS>Non hai ancora playlist</NO_PLAYLISTS>
+<ACTION_FAILED>Impossibile salvare la modifica</ACTION_FAILED>
+<ADDED_TO_LIKED_VIDEOS>Aggiunto ai video piaciuti</ADDED_TO_LIKED_VIDEOS>
+<REMOVED_FROM_LIKED_VIDEOS>Rimosso dai video piaciuti</REMOVED_FROM_LIKED_VIDEOS>
+<ADDED_TO_PLAYLIST_NAME>Aggiunto a %0</ADDED_TO_PLAYLIST_NAME>
+<REMOVED_FROM_PLAYLIST_NAME>Rimosso da %0</REMOVED_FROM_PLAYLIST_NAME>

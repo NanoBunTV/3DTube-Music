@@ -2,7 +2,7 @@
 
 <img src="resource/art/icon_large.png" alt="3DTube Music icon" width="96" align="right">
 
-A work-in-progress homebrew YouTube Music client for the Nintendo 3DS.
+A homebrew YouTube Music client for the Nintendo 3DS.
 
 3DTube Music is based on [FourthTube](https://github.com/erievs/FourthTube), which continued
 [ThirdTube](https://github.com/windows-server-2003/ThirdTube) after it stopped working. It plays music
@@ -10,8 +10,7 @@ natively, without running any JavaScript or rendering web pages.
 
 ## Status
 
-Alpha. It's tested on a New 3DS; it hasn't been tested on an Old 3DS yet. Expect bugs, and if you find one,
-please open an issue.
+Tested on a New 3DS; it hasn't been tested on an Old 3DS yet. If you find a bug, please open an issue.
 
 ## Features
 
@@ -25,13 +24,11 @@ please open an issue.
  - Now-playing screen with album art, play queue, shuffle and repeat (off / all / one)
  - Lyrics (from YouTube Music, when available)
  - Radio: keeps playing similar songs when the queue ends (can be turned off in Settings > Playback)
- - Optional Google account sign-in, with a Library tab for your Liked Music and playlists
+ - Optional Google account sign-in : Library tab with your Liked Music and playlists, like songs (♥), add songs
+   to your playlists or create new ones
  - Listening history
  - Interface in English, German, French, Spanish, Italian, Brazilian Portuguese and Japanese
-
-### Planned
-
- - Saved albums and artists in the Library
+ - In-app updates (Settings > Update)
 
 ## Controls
 
@@ -49,12 +46,24 @@ please open an issue.
     - Y : toggle shuffle
     - X : cycle repeat (off / all / one)
     - Hold a song in the Queue tab : remove it from the queue
+    - Tap ♥ (right of the title) : like the song (it goes to your YouTube Liked videos, not Liked Music); tap the list icon (left of the title) : add it to a playlist
+      (signed in only)
 
 Below are for debug purposes
 
  - Select + X : toggle debug log
  - Select + Y : toggle memory usage monitor
  - Select + R + A : toggle FPS monitor
+
+## Installing
+
+Download the latest release from the [Releases page](https://github.com/NanoBunTV/3DTube-Music/releases/latest).
+
+ - **.3dsx** : copy `3DTubeMusic.3dsx` to `sd:/3ds/` and open it from the Homebrew Launcher.
+ - **.cia** : copy `3DTubeMusic.cia` to the SD card and install it with [FBI](https://github.com/lifehackerhansol/FBI);
+   the app then appears on the HOME menu.
+
+Afterwards, updates can be installed from inside the app : Settings > Update.
 
 ## Requirements
 

@@ -127,3 +127,13 @@
 <LIBRARY>Biblioteca</LIBRARY>
 <LIKED_MUSIC>Música que te gusta</LIKED_MUSIC>
 <LIBRARY_SIGN_IN_HINT>Inicia sesión en %0 para ver tus playlists aquí.</LIBRARY_SIGN_IN_HINT>
+<SIGN_IN_REQUIRED>Inicia sesión en %0 para usar esta función</SIGN_IN_REQUIRED>
+<ADD_TO_PLAYLIST>Agregar a playlist</ADD_TO_PLAYLIST>
+<NEW_PLAYLIST>Nueva playlist</NEW_PLAYLIST>
+<NEW_PLAYLIST_NAME>Nombre de la playlist</NEW_PLAYLIST_NAME>
+<NO_PLAYLISTS>Aún no tienes playlists</NO_PLAYLISTS>
+<ACTION_FAILED>No se pudo guardar el cambio</ACTION_FAILED>
+<ADDED_TO_LIKED_VIDEOS>Agregado a Videos que me gustan</ADDED_TO_LIKED_VIDEOS>
+<REMOVED_FROM_LIKED_VIDEOS>Quitado de Videos que me gustan</REMOVED_FROM_LIKED_VIDEOS>
+<ADDED_TO_PLAYLIST_NAME>Agregada a %0</ADDED_TO_PLAYLIST_NAME>
+<REMOVED_FROM_PLAYLIST_NAME>Quitada de %0</REMOVED_FROM_PLAYLIST_NAME>

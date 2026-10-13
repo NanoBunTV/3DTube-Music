@@ -10,6 +10,7 @@
 | — | lyrics / icon / translations / clean-up build | **Not yet tested** |
 | 2026-10-13 | (owner report) | Sign-in works, but there was no way to see personal playlists → Library tab added |
 | 2026-10-13 | library build | Library tab : playlists and Liked Music work. The 1-hour token refresh test was skipped (owner's call; the code path is only exercised after an hour) |
+| — | like / add-to-playlist / v1.0.0 release build | **Not yet tested** |
 
 Pressing HOME stops audio. That's standard for 3DS applications, not a bug.
 
@@ -24,7 +25,7 @@ Pressing HOME stops audio. That's standard for 3DS applications, not a bug.
 7. Signed in : songs still play the full length
 8. Lyrics tab : a song (from the Songs search filter) shows lyrics and "Source: ..."; a music video shows
    "Lyrics not available"; changing tracks while the tab is open updates it
-9. HOME menu : new icon, banner and banner sound; app name "3DTube Music"
+9. HOME menu : new icon, banner and banner sound (the owner's sound, CIA only); app name "3DTube Music"
 10. Settings > Display/UI > UI Language : each language shows no `[SR Not Found]`, tab labels fit
 11. History (overlay menu) : played songs appear; tapping one plays it
 12. Tracks start at least as fast as before (one request per track now instead of four)
@@ -33,6 +34,13 @@ Pressing HOME stops audio. That's standard for 3DS applications, not a bug.
     Shuffle work; private playlists open
 14. (Optional, skipped so far) after over an hour in the app, the Library / playlists still load (token refresh)
 15. Sign out / in from Settings, go back to Home : the Library tab updates
+16. Now playing, signed in : ♥ (right of the title) turns red for liked songs; tapping it likes / unlikes
+    (notice "Added to / Removed from Liked videos"; the song goes to YouTube's Liked videos, not Liked Music)
+17. List icon (left of the title) : popup lists your playlists with ✓ on those containing the song; tapping
+    adds / removes; "+ New playlist" asks for a name and creates a private playlist with the song; B closes it
+18. Signed out : both icons are grey and show a "Sign in under ..." notice
+19. About shows "Version v1.0.0 (based on FourthTube Beta 34.1)"; Settings > Update finds the release once
+    it's published (repository must be public)
 
 ## Known issues / limitations
 
@@ -48,10 +56,12 @@ Pressing HOME stops audio. That's standard for 3DS applications, not a bug.
   Saved albums and subscribed artists aren't shown : YouTube Music's library API rejects the app's TV sign-in
   (see YOUTUBE_API.md). The owner decided not to add them through the TV (TVHTML5) API.
 - Liked Music has no cover image in the Library list.
+- ♥ likes go to YouTube's Liked videos, not YouTube Music's Liked Music : every way to write to Liked Music
+  rejects the TV sign-in (see YOUTUBE_API.md). The owner chose to keep the button with accurate messages
+  (2026-10-13).
 - `/@handle` channel links aren't supported in the search box (only `/channel/UC...` links open the artist page).
 
 ## Roadmap
 
 1. Resume where you left off (save the queue and position on exit)
 2. Synced lyrics (needs a different client than WEB_REMIX)
-3. Re-enable the updater once GitHub releases exist (`UPDATE_RELEASES_API_URL` in `source/definitions.hpp`)

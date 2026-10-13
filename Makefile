@@ -51,10 +51,11 @@ LIBRARY := library
 GFXBUILD	:=	$(ROMFS)/gfx
 TIME := $(shell date +"%Y-%m-%d %H:%M:%S %Z")
 #---------------------------------------------------------------------------------
-APP_VER					:= 84
+# CIA title version : major * 1024 + minor * 16 + patch (v1.0.0 = 1024). Keep in sync with DEF_CURRENT_APP_VER.
+APP_VER					:= 1024
 APP_TITLE				:= 3DTube Music
 APP_DESCRIPTION				:= A YouTube Music Client For The 3DS
-APP_AUTHOR				:= 3DTube Music Contributors
+APP_AUTHOR				:= NanoBunTV
 PRODUCT_CODE				:= CTR-3TM
 UNIQUE_ID				:= 0xBEA12
 
@@ -272,7 +273,7 @@ $(OBJDIRS)	:
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET)_dev.cia
+	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET)_dev.cia $(TARGET).cia
 
 #---------------------------------------------------------------------------------
 $(GFXBUILD)/%.t3x	$(BUILD)/%.h	:	%.t3s

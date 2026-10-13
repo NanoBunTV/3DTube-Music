@@ -599,11 +599,12 @@ MusicLyrics music_load_lyrics(const std::string &video_id) {
 /* ------------------------------------------------------------------------------------------------------------------ */
 // signed-in library (see music_parser.hpp for why this uses the regular YouTube API)
 
-#define ACCOUNT_API_URL "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false"
+#define ACCOUNT_API_BASE "https://www.youtube.com/youtubei/v1/"
 
-// authenticated ANDROID_VR browse request; `body` : top-level members other than "context"
-// retries once with a refreshed token if the token was rejected
-template <class Func> static std::string account_browse(const std::string &body, Func on_success) {
+// authenticated ANDROID_VR request to `endpoint` (e.g. "browse", "like/like"); `body` : top-level members other
+// than "context". Retries once with a refreshed token if the token was rejected
+template <class Func>
+static std::string account_api(const std::string &endpoint, const std::string &body, Func on_success) {
 	std::string token = OAuth::get_valid_access_token();
 	if (token.empty()) {
 		return "Not signed in";
@@ -613,7 +614,8 @@ template <class Func> static std::string account_browse(const std::string &body,
 	NetworkResult result;
 	for (int attempt = 0; attempt < 2; attempt++) {
 		result = thread_network_session_list.perform(
-		    http_post_json_request(ACCOUNT_API_URL, request_body, {{"Authorization", "Bearer " + token}}));
+		    http_post_json_request(ACCOUNT_API_BASE + endpoint + "?prettyPrint=false", request_body,
+		                           {{"Authorization", "Bearer " + token}}));
 		if (result.fail || result.status_code != 401) {
 			break;
 		}
@@ -625,6 +627,9 @@ template <class Func> static std::string account_browse(const std::string &body,
 	}
 	if (result.fail) {
 		return "Network error : " + result.error;
+	}
+	if (result.status_code / 100 != 2 && result.data.empty()) {
+		return "HTTP error " + std::to_string(result.status_code);
 	}
 	std::string error;
 	result.data.push_back('\0');
@@ -675,7 +680,7 @@ static std::string parse_account_playlist_items(RJson list, std::vector<MusicTra
 MusicLibraryResult music_load_library() {
 	MusicLibraryResult res;
 	debug_music_info("library");
-	res.error = account_browse(R"("browseId":"FElibrary")", [&](RJson json) {
+	res.error = account_api("browse", R"("browseId":"FElibrary")", [&](RJson json) {
 		RJson sections = json["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][(size_t)0]["tabRenderer"]
 		                     ["content"]["sectionListRenderer"]["contents"];
 		for (auto section : sections.array_items()) {
@@ -714,7 +719,7 @@ MusicCollection music_load_account_playlist(const std::string &browse_id) {
 	res.browse_id = MUSIC_ACCOUNT_PREFIX + browse_id;
 	res.from_account = true;
 	debug_music_info("account playlist : " + browse_id);
-	res.error = account_browse(R"("browseId":")" + json_escape(browse_id) + "\"", [&](RJson json) {
+	res.error = account_api("browse", R"("browseId":")" + json_escape(browse_id) + "\"", [&](RJson json) {
 		RJson header = json["header"]["playlistHeaderRenderer"];
 		res.title = runs_text(header["title"]);
 		std::string owner = runs_text(header["ownerText"]);
@@ -736,13 +741,95 @@ MusicCollection music_load_account_playlist(const std::string &browse_id) {
 
 static void account_playlist_load_more(MusicCollection &collection) {
 	std::string new_continuation;
-	collection.error = account_browse(R"("continuation":")" + json_escape(collection.continuation) + "\"",
+	collection.error = account_api("browse", R"("continuation":")" + json_escape(collection.continuation) + "\"",
 	                                  [&](RJson json) {
 		                                  new_continuation = parse_account_playlist_items(
 		                                      json["continuationContents"]["playlistVideoListContinuation"],
 		                                      collection.tracks);
 	                                  });
 	collection.continuation = collection.error.empty() ? new_continuation : "";
+}
+
+std::string music_get_like_status(const std::string &video_id, bool &liked) {
+	liked = false;
+	bool found = false;
+	std::string error =
+	    account_api("next", R"("videoId":")" + json_escape(video_id) + "\"", [&](RJson json) {
+		    RJson tabs = json["contents"]["singleColumnWatchNextResults"]["results"]["watchNextTabbedResultsRenderer"]["tabs"];
+		    for (auto tab : tabs.array_items()) {
+			    for (auto section : tab["tabRenderer"]["content"]["sectionListRenderer"]["contents"].array_items()) {
+				    for (auto item : section["itemSectionRenderer"]["contents"].array_items()) {
+					    RJson status = item["videoMetadataRenderer"]["likeButton"]["likeButtonRenderer"]["likeStatus"];
+					    if (status.is_valid()) {
+						    liked = status.string_value() == "LIKE";
+						    found = true;
+					    }
+				    }
+			    }
+		    }
+	    });
+	if (error.empty() && !found) {
+		error = "Like status not found";
+	}
+	return error;
+}
+
+std::string music_set_like(const std::string &video_id, bool like) {
+	return account_api(like ? "like/like" : "like/removelike",
+	                   R"("target":{"videoId":")" + json_escape(video_id) + "\"}", [](RJson) {});
+}
+
+std::vector<MusicPlaylistOption> music_get_add_to_playlist(const std::string &video_id, std::string &error) {
+	std::vector<MusicPlaylistOption> res;
+	error = account_api("playlist/get_add_to_playlist", R"("videoIds":[")" + json_escape(video_id) + "\"]",
+	                    [&](RJson json) {
+		                    for (auto content : json["contents"].array_items()) {
+			                    for (auto playlist : content["addToPlaylistRenderer"]["playlists"].array_items()) {
+				                    RJson option = playlist["playlistAddToOptionRenderer"];
+				                    MusicPlaylistOption cur;
+				                    cur.playlist_id = option["playlistId"].string_value();
+				                    if (cur.playlist_id.empty() || cur.playlist_id == "WL") { // skip Watch later
+					                    continue;
+				                    }
+				                    cur.title = runs_text(option["title"]);
+				                    cur.privacy = option["privacy"].string_value();
+				                    cur.contains_video = option["containsSelectedVideos"].string_value() == "ALL";
+				                    res.push_back(cur);
+			                    }
+		                    }
+	                    });
+	return res;
+}
+
+// the response carries "status": "STATUS_SUCCEEDED" on success
+static std::string check_edit_status(const std::string &error, const std::string &status) {
+	if (!error.empty()) {
+		return error;
+	}
+	return status == "" || status == "STATUS_SUCCEEDED" ? "" : "Failed : " + status;
+}
+
+std::string music_edit_playlist(const std::string &playlist_id, const std::string &video_id, bool add) {
+	std::string status;
+	std::string action = add ? R"({"action":"ACTION_ADD_VIDEO","addedVideoId":")" + json_escape(video_id) + "\"}"
+	                         : R"({"action":"ACTION_REMOVE_VIDEO_BY_VIDEO_ID","removedVideoId":")" +
+	                               json_escape(video_id) + "\"}";
+	std::string error =
+	    account_api("browse/edit_playlist", R"("playlistId":")" + json_escape(playlist_id) + R"(","actions":[)" + action + "]",
+	                [&](RJson json) { status = json["status"].string_value(); });
+	return check_edit_status(error, status);
+}
+
+std::string music_create_playlist(const std::string &title, const std::string &video_id, std::string &playlist_id) {
+	playlist_id = "";
+	std::string error = account_api("playlist/create",
+	                                R"("title":")" + json_escape(title) + R"(","privacyStatus":"PRIVATE","videoIds":[")" +
+	                                    json_escape(video_id) + "\"]",
+	                                [&](RJson json) { playlist_id = json["playlistId"].string_value(); });
+	if (error.empty() && playlist_id.empty()) {
+		error = "Playlist not created";
+	}
+	return error;
 }
 
 std::string music_thumbnail_url(const std::string &url, int size) {

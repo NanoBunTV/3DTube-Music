@@ -75,6 +75,23 @@ MusicLibraryResult music_load_library();
 // `browse_id` : "VL<playlist id>", without MUSIC_ACCOUNT_PREFIX
 MusicCollection music_load_account_playlist(const std::string &browse_id);
 
+// Signed-in actions (same API as the library). All return an error message, "" on success.
+// Liking a song adds it to Liked Music.
+std::string music_get_like_status(const std::string &video_id, bool &liked);
+std::string music_set_like(const std::string &video_id, bool like);
+
+struct MusicPlaylistOption {
+	std::string playlist_id; // without "VL"
+	std::string title;
+	std::string privacy; // PUBLIC, UNLISTED or PRIVATE
+	bool contains_video = false;
+};
+// the user's playlists the video can be added to (Watch later excluded), with whether they already contain it
+std::vector<MusicPlaylistOption> music_get_add_to_playlist(const std::string &video_id, std::string &error);
+std::string music_edit_playlist(const std::string &playlist_id, const std::string &video_id, bool add);
+// creates a private playlist containing the video
+std::string music_create_playlist(const std::string &title, const std::string &video_id, std::string &playlist_id);
+
 // home feed : shelves from the YouTube Music home and explore pages (works signed out)
 struct MusicShelf {
 	std::string title;

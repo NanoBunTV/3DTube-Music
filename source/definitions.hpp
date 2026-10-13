@@ -4,13 +4,16 @@
 #define DEF_MAIN_DIR (std::string) "/3ds/3DTubeMusic/"
 #define DEF_SWKBD_MAX_DIC_WORDS 128
 #define DEF_CHECK_INTERNET_URL (std::string) "https://connectivitycheck.gstatic.com/generate_204"
-#define DEF_CURRENT_APP_VER (std::string) "Alpha 0.1 (FourthTube Beta 34.1)"
+// Must match the release tag (e.g. tag "v1.0.0") : the updater compares the numbers in both. Also update APP_VER in
+// the Makefile and CHANGELOG.md when releasing (see Docs/BUILDING.md).
+#define DEF_CURRENT_APP_VER (std::string) "v1.0.0"
 #define DEF_CURRENT_APP_VER_INT 0
-#define GITHUB_URL std::string("https://github.com/erievs/FourthTube")
-// GitHub "releases/latest" API endpoint used by the in-app updater.
-// Empty until 3DTube Music publishes its own releases; the updater must never pull upstream FourthTube builds,
-// because it overwrites the running .3dsx with whatever it downloads.
-#define UPDATE_RELEASES_API_URL std::string("")
+#define DEF_BASED_ON_VER (std::string) "FourthTube Beta 34.1"
+#define GITHUB_URL std::string("https://github.com/NanoBunTV/3DTube-Music")
+// GitHub "releases/latest" API endpoint used by the in-app updater (pre-releases are ignored by this endpoint).
+// Must only ever point at 3DTube Music's own releases : the updater overwrites the running .3dsx / installs the .cia
+// attached to that release.
+#define UPDATE_RELEASES_API_URL std::string("https://api.github.com/repos/NanoBunTV/3DTube-Music/releases/latest")
 
 // video player
 #define DEF_SAPP0_NAME (std::string) "Video\nplayer"

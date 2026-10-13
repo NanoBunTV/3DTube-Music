@@ -17,14 +17,24 @@ struct SuccinctVideoView : public FixedSizeView {
 	std::string bottom_right_overlay;
 	float get_thumbnail_height() const { return y1 - y0; }
 	float get_thumbnail_width() const {
-		return get_thumbnail_height() * VIDEO_LIST_THUMBNAIL_WIDTH / VIDEO_LIST_THUMBNAIL_HEIGHT;
+		return square_thumbnail ? get_thumbnail_height()
+		                        : get_thumbnail_height() * VIDEO_LIST_THUMBNAIL_WIDTH / VIDEO_LIST_THUMBNAIL_HEIGHT;
 	}
 
   public:
 	int thumbnail_handle = -1;
 	std::string thumbnail_url;
+	// music style : square album art, which must not be cropped to 16:9 when loaded
+	bool square_thumbnail = false;
+	ThumbnailType thumbnail_type = ThumbnailType::VIDEO_THUMBNAIL;
 
 	bool is_playlist = false;
+
+	SuccinctVideoView *set_square_thumbnail(bool square) {
+		square_thumbnail = square;
+		thumbnail_type = square ? ThumbnailType::DEFAULT : ThumbnailType::VIDEO_THUMBNAIL;
+		return this;
+	}
 
 	SuccinctVideoView(double x0, double y0, double width, double height)
 	    : View(x0, y0), FixedSizeView(x0, y0, width, height) {}

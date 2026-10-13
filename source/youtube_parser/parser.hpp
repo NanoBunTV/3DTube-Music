@@ -183,6 +183,7 @@ struct YouTubeVideoDetail {
 		return playability_status == "OK" &&
 		       (both_stream_url != "" || (audio_stream_url != "" && video_stream_urls.size()));
 	}
+	bool is_audio_playable() const { return playability_status == "OK" && audio_stream_url != ""; }
 
 	void load_more_suggestions();
 	void load_more_comments();

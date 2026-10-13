@@ -7,6 +7,7 @@
 #include "scenes/setting_menu.hpp"
 #include "scenes/watch_history.hpp"
 #include "scenes/home.hpp"
+#include "scenes/music_browse.hpp"
 #include "network_decoder/network_io.hpp"
 #include "network_decoder/thumbnail_loader.hpp"
 #include "util/async_task.hpp"
@@ -152,6 +153,8 @@ void Menu_init(void) {
 	History_suspend();
 	Search_init();
 	Search_suspend();
+	MusicBrowse_init();
+	MusicBrowse_suspend();
 	// add here
 	Home_init(); // first running
 	global_current_scene = SceneType::HOME;
@@ -176,6 +179,7 @@ void Menu_exit(void) {
 	VideoPlayer_exit();
 	Channel_exit();
 	Search_exit();
+	MusicBrowse_exit();
 	Sem_exit();
 	About_exit();
 	History_exit();
@@ -291,6 +295,8 @@ bool Menu_main(void) {
 		History_draw();
 	} else if (global_current_scene == SceneType::HOME) {
 		Home_draw();
+	} else if (global_current_scene == SceneType::MUSIC_BROWSE) {
+		MusicBrowse_draw();
 	}
 	// add here
 
@@ -309,6 +315,8 @@ bool Menu_main(void) {
 			History_suspend();
 		} else if (global_current_scene == SceneType::HOME) {
 			Home_suspend();
+		} else if (global_current_scene == SceneType::MUSIC_BROWSE) {
+			MusicBrowse_suspend();
 		}
 		// add here
 	}
@@ -362,6 +370,8 @@ bool Menu_main(void) {
 			History_resume(arg);
 		} else if (global_current_scene == SceneType::HOME) {
 			Home_resume(arg);
+		} else if (global_current_scene == SceneType::MUSIC_BROWSE) {
+			MusicBrowse_resume(arg);
 		}
 		// add here
 	}

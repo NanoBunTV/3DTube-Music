@@ -8,6 +8,7 @@ enum class SceneType {
 	ABOUT,
 	HISTORY,
 	HOME,
+	MUSIC_BROWSE,
 	// used for intent
 	NO_CHANGE,
 	BACK,

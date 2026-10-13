@@ -152,3 +152,33 @@
 <SCREEN_TOGGLE_BOTH>Entrambi</SCREEN_TOGGLE_BOTH>
 <SPONSORBLOCK>SponsorBlock</SPONSORBLOCK>
 <SPONSORBLOCK_SKIPPED>Saltato</SPONSORBLOCK_SKIPPED>
+<ADDED_TO_QUEUE>Playing next</ADDED_TO_QUEUE>
+<ALBUMS>Albums</ALBUMS>
+<ALBUMS_AND_SINGLES>Albums & singles</ALBUMS_AND_SINGLES>
+<ALL_SONGS>All songs</ALL_SONGS>
+<ARTISTS>Artists</ARTISTS>
+<AUDIO>Audio</AUDIO>
+<AUDIO_FORMAT>Audio format</AUDIO_FORMAT>
+<AUTOPLAY_RADIO>Autoplay similar songs when the queue ends</AUTOPLAY_RADIO>
+<CANNOT_PLAY>Can't play this song</CANNOT_PLAY>
+<CANNOT_REMOVE_PLAYING>Can't remove the song that's playing</CANNOT_REMOVE_PLAYING>
+<NOTHING_PLAYING>Nothing playing. Search for music to get started.</NOTHING_PLAYING>
+<NOW_PLAYING>Now Playing</NOW_PLAYING>
+<PAUSED>Paused</PAUSED>
+<PLAY_ALL>Play</PLAY_ALL>
+<QUEUE>Queue</QUEUE>
+<QUEUE_EMPTY>The queue is empty</QUEUE_EMPTY>
+<QUEUE_HOLD_TO_REMOVE>hold a song to remove it</QUEUE_HOLD_TO_REMOVE>
+<RADIO_ADDED>Added similar songs to the queue</RADIO_ADDED>
+<RADIO_NO_MORE_SONGS>No more similar songs found</RADIO_NO_MORE_SONGS>
+<REPEAT_ALL>Repeat: All</REPEAT_ALL>
+<REPEAT_OFF>Repeat: Off</REPEAT_OFF>
+<REPEAT_ONE>Repeat: One</REPEAT_ONE>
+<SEARCH_MUSIC_HINT>Tap the search box to find music</SEARCH_MUSIC_HINT>
+<SHUFFLE>Shuffle</SHUFFLE>
+<SKIPPED_UNPLAYABLE>Skipped a song that can't be played</SKIPPED_UNPLAYABLE>
+<SONGS>Songs</SONGS>
+<SONGS_LOWER>songs</SONGS_LOWER>
+<START_RADIO>Start radio</START_RADIO>
+<TOP_SONGS>Top songs</TOP_SONGS>
+<UP_NEXT>Up next</UP_NEXT>

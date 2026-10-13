@@ -12,30 +12,38 @@ Alpha. It hasn't been tested on hardware yet, so expect crashes and bugs. If you
 
 ## Features
 
- - Audio-only playback by default (video is still available up to 480p)
+ - Audio-only playback
  - No ads. Streams are fetched directly, so ads are never requested
  - [SponsorBlock](https://sponsor.ajay.app/) auto-skip for non-music sections, sponsors, self-promotion and
-   interaction reminders (can be turned off in Settings)
- - Searching, playlists, autoplay and loop
+   interaction reminders (can be turned off in Settings > Playback)
+ - YouTube Music search with Songs / Albums / Artists / Playlists filters
+ - Album, playlist and artist pages
+ - Now-playing screen with album art, play queue, shuffle and repeat (off / all / one)
+ - Radio: keeps playing similar songs when the queue ends (can be turned off in Settings > Playback)
  - Optional Google account sign-in
  - Local history and subscriptions
 
 ### Planned
 
- - YouTube Music search (songs, albums, artists, playlists)
- - Music-style now-playing screen
- - Play queue with shuffle and repeat
+ - YouTube Music home feed
  - YouTube Music library when signed in (liked songs, saved albums, playlists)
+ - Lyrics
 
 ## Controls
 
  - B button : go back to the previous screen
  - C-pad up/down : scroll
- - L/R : switch between tabs
+ - L/R : switch between tabs (search filters on the search screen)
  - Select + Start : blackout the bottom screen
- - In the player
+ - Tap a song : play it (the rest of the list is queued after it)
+ - Hold a song : play it next
+ - In the now-playing screen
+    - A : play/pause
+    - ZL/ZR : previous/next song
     - Arrow left/right : 10 s seek
-    - ZL/ZR : 5 s seek
+    - Y : toggle shuffle
+    - X : cycle repeat (off / all / one)
+    - Hold a song in the Queue tab : remove it from the queue
 
 Below are for debug purposes
 
@@ -61,7 +69,7 @@ this way can be flagged, so consider using a secondary Google account. Never sha
 
 ## Building
 
-[Click here for instructions](/Documentation/Build%20Instructions.md)
+[Click here for instructions](/Docs/BUILDING.md)
 
 ## Credits
 

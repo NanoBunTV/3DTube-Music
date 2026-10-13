@@ -58,7 +58,6 @@ void load_settings() {
 	}
 	var_eco_mode = load_int("eco_mode", 1);
 	var_screen_off_mode = load_int("screen_off_mode", 0);
-	var_full_screen_mode = load_int("full_screen_mode", 0);
 	var_full_dislike_like_count = load_int("full_dislike_like_count", 0);
 	var_sponsorblock_enabled = load_int("sponsorblock_enabled", 1);
 	var_hide_pointer = load_int("hide_pointer", 0);
@@ -68,13 +67,9 @@ void load_settings() {
 	    std::min(COMMUNITY_IMAGE_SIZE_MAX,
 	             std::max(COMMUNITY_IMAGE_SIZE_MIN, load_int("community_image_size", COMMUNITY_IMAGE_SIZE_DEFAULT)));
 	var_autoplay_level = std::min(2, std::max(0, load_int("autoplay_level", 2)));
-	var_loop_mode = std::min(2, std::max(0, load_int("loop_mode", 0)));
-	var_video_quality = std::min(480, std::max(0, load_int("video_quality", 0)));
 	var_forward_buffer_ratio = std::max(0.1, std::min(1.0, load_double("forward_buffer_ratio", 0.8)));
 	var_history_enabled = load_int("history_enabled", 1);
-	var_video_show_debug_info = load_int("video_show_debug_info", 0);
-	var_player_response = load_int("player_response", 1); // (Beta 24.1, switch to Android VR for now)
-	var_video_linear_filter = load_int("linear_filter", 1);
+	var_player_response = load_int("player_client", 2); // visionOS : the only client serving full streams without a PO token (2026-10)
 	var_dpad_scroll_speed0 = std::max(1.0, std::min(12.0, load_double("dpad_scroll_speed0", 6.0)));
 	var_dpad_scroll_speed1 = std::max(var_dpad_scroll_speed0, std::min(12.0, load_double("dpad_scroll_speed1", 9.0)));
 	var_dpad_scroll_speed1_threshold = std::max(0.3, std::min(5.0, load_double("dpad_scroll_speed1_threshold", 2.0)));
@@ -89,8 +84,6 @@ void load_settings() {
 	Util_cset_set_wifi_state(true);
 	Util_cset_set_screen_brightness(true, true, var_lcd_brightness);
 	youtube_change_content_language(var_lang_content);
-	video_set_linear_filter_enabled(var_video_linear_filter);
-	video_set_show_debug_info(var_video_show_debug_info);
 }
 void save_settings() {
 	std::string data;
@@ -110,7 +103,6 @@ void save_settings() {
 	add_int("time_to_turn_off_lcd", var_time_to_turn_off_lcd);
 	add_int("eco_mode", var_eco_mode);
 	add_int("screen_off_mode", var_screen_off_mode);
-	add_int("full_screen_mode", var_full_screen_mode);
 	add_int("full_dislike_like_count", var_full_dislike_like_count);
 	add_int("sponsorblock_enabled", var_sponsorblock_enabled);
 	add_int("hide_pointer", var_hide_pointer);
@@ -118,13 +110,9 @@ void save_settings() {
 	add_int("disable_pull_to_refresh", var_disable_pull_to_refresh);
 	add_int("community_image_size", var_community_image_size);
 	add_int("autoplay_level", var_autoplay_level);
-	add_int("loop_mode", var_loop_mode);
-	add_int("video_quality", var_video_quality);
 	add_double("forward_buffer_ratio", var_forward_buffer_ratio);
 	add_int("history_enabled", var_history_enabled);
-	add_int("video_show_debug_info", var_video_show_debug_info);
-	add_int("player_response", var_player_response);
-	add_int("linear_filter", var_video_linear_filter);
+	add_int("player_client", var_player_response);
 	add_double("dpad_scroll_speed0", var_dpad_scroll_speed0);
 	add_double("dpad_scroll_speed1", var_dpad_scroll_speed1);
 	add_double("dpad_scroll_speed1_threshold", var_dpad_scroll_speed1_threshold);

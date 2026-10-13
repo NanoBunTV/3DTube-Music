@@ -63,7 +63,7 @@ void VerticalListView::swap_views(const std::vector<View *> &new_views) {
 				}
 			} else {
 				cur_view->thumbnail_handle =
-				    thumbnail_request(cur_view->thumbnail_url, thumbnail_scene, 0, ThumbnailType::VIDEO_THUMBNAIL);
+				    thumbnail_request(cur_view->thumbnail_url, thumbnail_scene, 0, cur_view->thumbnail_type);
 			}
 		} else {
 			auto *cur_view = dynamic_cast<SuccinctChannelView *>(views[i]);
@@ -176,7 +176,7 @@ void VerticalListView::update_(Hid_info key) {
 			if (cur_view) {
 				if (cur_view->thumbnail_handle == -1) {
 					cur_view->thumbnail_handle =
-					    thumbnail_request(cur_view->thumbnail_url, thumbnail_scene, 0, ThumbnailType::VIDEO_THUMBNAIL);
+					    thumbnail_request(cur_view->thumbnail_url, thumbnail_scene, 0, cur_view->thumbnail_type);
 				}
 			} else {
 				auto *cur_view = dynamic_cast<SuccinctChannelView *>(views[i]);

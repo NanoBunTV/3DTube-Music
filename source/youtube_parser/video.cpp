@@ -543,13 +543,13 @@ YouTubeVideoDetail youtube_load_video_page(std::string url) {
 	std::string video_content;
 	std::string visitor_data = extractVisitorData();
 
-	// Use Android VR client when authenticated, regardless of var_player_response setting
+	// When signed in, the metadata request is authenticated (Android VR).
+	// The player request always uses the selected client without authentication : as of 2026-10, authenticated
+	// Android VR (and plain Android) stream urls stop working after ~1 minute (HTTP 403, PO token enforcement),
+	// while visionOS serves full streams. Authenticated Android VR is only used as a fallback (see below).
 	bool use_android_vr = OAuth::is_authenticated();
 
-	if (use_android_vr) {
-		video_content =
-		    R"({"videoId": "%0", %1"context": {"client": {"hl": "%2","gl": "%3","clientName": "ANDROID_VR","clientVersion": "1.65.10","deviceMake": "Oculus","deviceModel": "Quest 3","androidSdkVersion": "34","osName": "Android","osVersion": "14","visitorData": "%4"}}, "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": "0"}}, "contentCheckOk": true, "racyCheckOk": true})";
-	} else if (var_player_response == 0) {
+	if (var_player_response == 0) {
 		// This makes no sense, I know. But InnerTube is completely okay with it, so let's use it.
 		video_content =
 		    R"({"videoId": "%0", %1"context": {"client": {"hl": "%2","gl": "%3","clientName": "ANDROID","clientVersion": "20.10.38","deviceMake": "Apple","deviceModel": "iPhone9,1","osName": "iPhone","userAgent": "com.google.ios.youtube/19.01.1 (iPhone9,1; U; CPU iOS 15_0_0 like Mac OS X;)\"","osVersion": "15.0.0.19A346", "visitorData": "%4"}}, "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": "0"}}})";
@@ -564,10 +564,10 @@ YouTubeVideoDetail youtube_load_video_page(std::string url) {
 		    R"({"videoId": "%0", %1"context": {"client": {"hl": "%2","gl": "%3","clientName": "VISIONOS","clientVersion": "0.1","deviceMake": "Apple","deviceModel": "iPhone16,2","osName": "iPhone","userAgent": "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)\"","osVersion": "2.2.22N842", "visitorData": "%4"}}, "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": "0"}}})";
 	} else {
 		// User messed with something. Fix that.
-		logger.error("appdata", "Invalid value for player_response has been set. Falling back to 0 (Android)!");
+		logger.error("appdata", "Invalid value for player_response has been set. Falling back to 2 (visionOS)!");
 		video_content =
-		    R"({"videoId": "%0", %1"context": {"client": {"hl": "%2","gl": "%3","clientName": "ANDROID","clientVersion": "20.10.38","deviceMake": "Apple","deviceModel": "iPhone9,1","osName": "iPhone","userAgent": "com.google.ios.youtube/19.01.1 (iPhone9,1; U; CPU iOS 15_0_0 like Mac OS X;)\"","osVersion": "15.0.0.19A346", "visitorData": "%4"}}, "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": "0"}}})";
-		var_player_response = 0;
+		    R"({"videoId": "%0", %1"context": {"client": {"hl": "%2","gl": "%3","clientName": "VISIONOS","clientVersion": "0.1","deviceMake": "Apple","deviceModel": "iPhone16,2","osName": "iPhone","userAgent": "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)\"","osVersion": "2.2.22N842", "visitorData": "%4"}}, "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": "0"}}})";
+		var_player_response = 2;
 		misc_tasks_request(TASK_SAVE_SETTINGS);
 	}
 	video_content = std::regex_replace(video_content, std::regex("%0"), res.id);
@@ -594,10 +594,11 @@ YouTubeVideoDetail youtube_load_video_page(std::string url) {
 
 	std::string urls[2] = {get_innertube_api_url("next"), get_innertube_api_url("player")};
 
-	std::map<std::string, std::string> headers;
+	std::map<std::string, std::string> headers;        // for the metadata request
+	std::map<std::string, std::string> player_headers; // never authenticated, see above
 	if (use_android_vr) {
 		headers["Authorization"] = "Bearer " + OAuth::get_access_token();
-		debug_info("Using authenticated Android VR client");
+		debug_info("Using authenticated Android VR client for metadata");
 	}
 
 	debug_info("accessing(multi)...");
@@ -606,7 +607,7 @@ YouTubeVideoDetail youtube_load_video_page(std::string url) {
 	{
 		std::vector<HttpRequest> requests;
 		requests.push_back(http_post_json_request(urls[0], post_content, headers));
-		requests.push_back(http_post_json_request(urls[1], video_content, headers));
+		requests.push_back(http_post_json_request(urls[1], video_content, player_headers));
 
 		results = thread_network_session_list.perform(requests);
 		for (int i = 0; i < 2; i++) {
@@ -641,12 +642,13 @@ YouTubeVideoDetail youtube_load_video_page(std::string url) {
 			}
 		}
 
-		// Fallback: If Android VR with auth returns UNPLAYABLE, retry with unauthenticated Android
-		if (use_android_vr && res.playability_status == "UNPLAYABLE") {
-			debug_info("Fallback to unauthenticated Android Client");
+		// Fallback : if the song needs a signed-in account (age restriction etc.), retry with authenticated Android VR.
+		// Its stream may be cut off after ~1 minute, but the player then reloads the url and resumes.
+		if (use_android_vr && res.playability_status != "OK") {
+			debug_info("Fallback to authenticated Android VR client");
 
 			std::string fallback_content =
-			    R"({"videoId": "%0", %1"context": {"client": {"hl": "%2","gl": "%3","clientName": "ANDROID","clientVersion": "20.10.38","deviceMake": "Apple","deviceModel": "iPhone9,1","osName": "iPhone","userAgent": "com.google.ios.youtube/19.01.1 (iPhone9,1; U; CPU iOS 15_0_0 like Mac OS X;)\"","osVersion": "15.0.0.19A346", "visitorData": "%4"}}, "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": "0"}}})";
+			    R"({"videoId": "%0", %1"context": {"client": {"hl": "%2","gl": "%3","clientName": "ANDROID_VR","clientVersion": "1.65.10","deviceMake": "Oculus","deviceModel": "Quest 3","androidSdkVersion": "34","osName": "Android","osVersion": "14","visitorData": "%4"}}, "playbackContext": {"contentPlaybackContext": {"signatureTimestamp": "0"}}, "contentCheckOk": true, "racyCheckOk": true})";
 			fallback_content = std::regex_replace(fallback_content, std::regex("%0"), res.id);
 			fallback_content =
 			    std::regex_replace(fallback_content, std::regex("%1"),
@@ -655,8 +657,7 @@ YouTubeVideoDetail youtube_load_video_page(std::string url) {
 			fallback_content = std::regex_replace(fallback_content, std::regex("%3"), country_code);
 			fallback_content = std::regex_replace(fallback_content, std::regex("%4"), visitor_data);
 
-			std::map<std::string, std::string> empty_headers;
-			auto fallback_result = http_post_json(get_innertube_api_url("player"), fallback_content, empty_headers);
+			auto fallback_result = http_post_json(get_innertube_api_url("player"), fallback_content, headers);
 
 			if (fallback_result.first && !fallback_result.second.empty()) {
 				std::vector<char> fallback_data(fallback_result.second.begin(), fallback_result.second.end());
@@ -674,7 +675,7 @@ YouTubeVideoDetail youtube_load_video_page(std::string url) {
 	if (res.id != "") {
 		res.succinct_thumbnail_url = youtube_get_video_thumbnail_url_by_id(res.id);
 	}
-	if (success && var_sponsorblock_enabled && res.is_playable()) {
+	if (success && var_sponsorblock_enabled && res.is_audio_playable()) {
 		youtube_fetch_sponsor_segments(res);
 	}
 	if (res.title != "" && res.id != "") {

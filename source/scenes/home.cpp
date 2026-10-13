@@ -17,6 +17,8 @@
 #include "util/async_task.hpp"
 #include "oauth/oauth.hpp"
 #include "rapidjson_wrapper.hpp"
+#include "music/music_parser.hpp"
+#include "music/queue.hpp"
 
 #define MAX_THUMBNAIL_LOAD_REQUEST 12
 
@@ -31,7 +33,12 @@ bool exiting = false;
 
 Mutex resource_lock;
 
-YouTubeHomeResult home_info;
+MusicHomeResult home_info; // YouTube Music home shelves
+// clicked home item, processed in Home_draw()
+int clicked_shelf = -1;
+int clicked_item = -1;
+int long_held_shelf = -1;
+int long_held_item = -1;
 std::vector<SubscriptionChannel> subscribed_channels;
 std::vector<SubscriptionChannel> oauth_subscribed_channels;
 bool clicked_is_video;
@@ -68,7 +75,6 @@ std::string oauth_feed_error = "";
 using namespace Home;
 
 static void load_home_page(void *);
-static void load_home_page_more(void *);
 static void load_subscription_feed(void *);
 static void load_oauth_subscription_feed(void *);
 static void load_oauth_subscription_feed_more(void *);
@@ -602,7 +608,7 @@ static SuccinctVideoView *convert_video_to_view(const YouTubeVideoSuccinct &vide
 }
 static void update_home_bottom_view(bool force_show_loading) {
 	delete home_videos_bottom_view;
-	if (home_info.has_more_results() || force_show_loading) {
+	if (home_info.error != "" || force_show_loading) {
 		home_videos_bottom_view = (new TextView(0, 0, 320, DEFAULT_FONT_INTERVAL + SMALL_MARGIN * 2))
 		                              ->set_text([]() {
 			                              if (home_info.error != "") {
@@ -611,17 +617,44 @@ static void update_home_bottom_view(bool force_show_loading) {
 				                              return LOCALIZED(LOADING);
 			                              }
 		                              })
-		                              ->set_x_alignment(TextView::XAlign::CENTER)
-		                              ->set_on_drawn([](View &) {
-			                              if (!is_async_task_running(load_home_page) &&
-			                                  !is_async_task_running(load_home_page_more) && home_info.error == "") {
-				                              queue_async_task(load_home_page_more, NULL);
-			                              }
-		                              });
+		                              ->set_x_alignment(TextView::XAlign::CENTER);
 	} else {
-		home_videos_bottom_view = new EmptyView(0, 0, 320, 0);
+		home_videos_bottom_view = new EmptyView(0, 0, 320, SMALL_MARGIN);
 	}
 	home_tab_view->set_views({home_videos_list_view, home_videos_bottom_view});
+}
+static std::vector<View *> home_shelves_to_views(const MusicHomeResult &home) {
+	constexpr int ITEM_HEIGHT = 44;
+	constexpr int TITLE_WIDTH = 320 - ITEM_HEIGHT - 3 - SMALL_MARGIN;
+	std::vector<View *> res;
+	for (size_t s = 0; s < home.shelves.size(); s++) {
+		const auto &shelf = home.shelves[s];
+		res.push_back((new TextView(SMALL_MARGIN, 0, 320 - SMALL_MARGIN, DEFAULT_FONT_INTERVAL + SMALL_MARGIN * 2))
+		                  ->set_text(shelf.title)
+		                  ->set_font_size(0.55, DEFAULT_FONT_INTERVAL + SMALL_MARGIN * 2));
+		for (size_t i = 0; i < shelf.items.size(); i++) {
+			const auto &item = shelf.items[i];
+			SuccinctVideoView *view = (new SuccinctVideoView(0, 0, 320, ITEM_HEIGHT))
+			                              ->set_square_thumbnail(true)
+			                              ->set_title_lines(truncate_str(item.title, TITLE_WIDTH, 1, 0.5, 0.5))
+			                              ->set_auxiliary_lines(truncate_str(item.subtitle, TITLE_WIDTH, 1, 0.5, 0.5))
+			                              ->set_thumbnail_url(music_thumbnail_url(item.thumbnail_url, 120));
+			view->set_get_background_color(View::STANDARD_BACKGROUND);
+			int shelf_index = s, item_index = i;
+			if (item.type == MusicItem::Type::SONG) {
+				view->add_on_long_hold(40, [shelf_index, item_index](View &) {
+					long_held_shelf = shelf_index;
+					long_held_item = item_index;
+				});
+			}
+			view->set_on_view_released([shelf_index, item_index](View &) {
+				clicked_shelf = shelf_index;
+				clicked_item = item_index;
+			});
+			res.push_back(view);
+		}
+	}
+	return res;
 }
 
 static void update_oauth_feed_bottom_view(bool force_show_loading) {
@@ -651,56 +684,32 @@ static void update_oauth_feed_bottom_view(bool force_show_loading) {
 
 static void load_home_page(void *) {
 	resource_lock.lock();
+	home_info.error = "";
 	update_home_bottom_view(true);
 	var_need_refresh = true;
 	resource_lock.unlock();
 
 	add_cpu_limit(ADDITIONAL_CPU_LIMIT);
-	auto results = youtube_load_home_page();
+	auto results = music_load_home();
 	remove_cpu_limit(ADDITIONAL_CPU_LIMIT);
 
-	logger.info("home", "truncate/view creation start");
-	std::vector<View *> new_videos_view;
-	for (auto video : results.videos) {
-		new_videos_view.push_back(convert_video_to_view(video));
-	}
-	logger.info("home", "truncate/view creation end");
+	std::vector<View *> new_views = home_shelves_to_views(results);
 
 	resource_lock.lock();
-	if (results.error == "") {
-		home_info = results;
-		home_videos_list_view->recursive_delete_subviews();
-		home_videos_list_view->set_views(new_videos_view);
-		update_home_bottom_view(false);
-	} else {
-		home_info.error = results.error;
+	if (exiting) {
+		resource_lock.unlock();
+		return;
 	}
+	home_info = results;
+	home_videos_list_view->recursive_delete_subviews();
+	home_videos_list_view->set_views(new_views);
+	update_home_bottom_view(false);
 
 	if (home_tab_view) {
 		home_tab_view->finish_pull_refresh();
 	}
 
 	var_need_refresh = true;
-	resource_lock.unlock();
-}
-static void load_home_page_more(void *) {
-	auto new_result = home_info;
-	new_result.load_more_results();
-
-	logger.info("home-c", "truncate/view creation start");
-	std::vector<View *> new_videos_view;
-	for (size_t i = home_info.videos.size(); i < new_result.videos.size(); i++) {
-		new_videos_view.push_back(convert_video_to_view(new_result.videos[i]));
-	}
-	logger.info("home-c", "truncate/view creation end");
-
-	resource_lock.lock();
-	home_info = new_result;
-	if (new_result.error == "") {
-		home_videos_list_view->views.insert(home_videos_list_view->views.end(), new_videos_view.begin(),
-		                                    new_videos_view.end());
-		update_home_bottom_view(false);
-	}
 	resource_lock.unlock();
 }
 static void load_subscription_feed(void *) {
@@ -1282,6 +1291,44 @@ void Home_draw(void) {
 			feed_fixed->update_y_range(0, CONTENT_Y_HIGH - TOP_HEIGHT - main_tab_view->tab_selector_height);
 		}
 		main_view->update(key);
+		// YouTube Music home items
+		if (long_held_shelf != -1) {
+			int s = long_held_shelf, i = long_held_item;
+			long_held_shelf = long_held_item = clicked_shelf = clicked_item = -1;
+			main_view->reset_holding_status(); // the long hold must not turn into a click
+			if (s < (int)home_info.shelves.size() && i < (int)home_info.shelves[s].items.size()) {
+				bool was_empty = !MusicQueue::has_current();
+				MusicQueue::add_next(home_info.shelves[s].items[i].track);
+				if (was_empty) {
+					music_player_play_queue();
+				}
+				music_player_show_notice(LOCALIZED(ADDED_TO_QUEUE));
+			}
+		}
+		if (clicked_shelf != -1) {
+			int s = clicked_shelf, i = clicked_item;
+			clicked_shelf = clicked_item = -1;
+			if (s < (int)home_info.shelves.size() && i < (int)home_info.shelves[s].items.size()) {
+				const auto &shelf = home_info.shelves[s];
+				const auto &item = shelf.items[i];
+				if (item.type == MusicItem::Type::SONG) {
+					// queue the shelf's songs from the tapped one onwards
+					std::vector<MusicTrack> tracks;
+					for (size_t j = i; j < shelf.items.size(); j++) {
+						if (shelf.items[j].type == MusicItem::Type::SONG) {
+							tracks.push_back(shelf.items[j].track);
+						}
+					}
+					MusicQueue::set(tracks, 0);
+					music_player_play_queue();
+					global_intent.next_scene = SceneType::VIDEO_PLAYER;
+					global_intent.arg = "";
+				} else {
+					global_intent.next_scene = SceneType::MUSIC_BROWSE;
+					global_intent.arg = item.browse_id;
+				}
+			}
+		}
 		if (clicked_url != "") {
 			global_intent.next_scene = clicked_is_video ? SceneType::VIDEO_PLAYER : SceneType::CHANNEL;
 			global_intent.arg = clicked_url;

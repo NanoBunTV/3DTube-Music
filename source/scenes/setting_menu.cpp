@@ -526,19 +526,6 @@ void Sem_init(void) {
 								misc_tasks_request(TASK_SAVE_SETTINGS);
 							}
 						}),
-					// full screen mode
-					(new SelectorView(0, 0, 320, 35, true))
-						->set_texts({
-							(std::function<std::string ()>) []() { return LOCALIZED(OFF); },
-							(std::function<std::string ()>) []() { return LOCALIZED(ON); }
-						}, var_full_screen_mode)
-						->set_title([](const SelectorView &) { return LOCALIZED(FULL_SCREEN_MODE); })
-						->set_on_change([](const SelectorView &view) {
-							if (var_full_screen_mode != view.selected_button) {
-								var_full_screen_mode = view.selected_button;
-								misc_tasks_request(TASK_SAVE_SETTINGS);
-							}
-						}),
 					// show full dislike/like
 					(new SelectorView(0, 0, 320, 35, true))
 						->set_texts({
@@ -549,19 +536,6 @@ void Sem_init(void) {
 						->set_on_change([](const SelectorView &view) {
 							if (var_full_dislike_like_count != view.selected_button) {
 								var_full_dislike_like_count = view.selected_button;
-								misc_tasks_request(TASK_SAVE_SETTINGS);
-							}
-						}),
-					// SponsorBlock
-					(new SelectorView(0, 0, 320, 35, true))
-						->set_texts({
-							(std::function<std::string ()>) []() { return LOCALIZED(OFF); },
-							(std::function<std::string ()>) []() { return LOCALIZED(ON); }
-						}, var_sponsorblock_enabled)
-						->set_title([](const SelectorView &) { return LOCALIZED(SPONSORBLOCK); })
-						->set_on_change([](const SelectorView &view) {
-							if (var_sponsorblock_enabled != view.selected_button) {
-								var_sponsorblock_enabled = view.selected_button;
 								misc_tasks_request(TASK_SAVE_SETTINGS);
 							}
 						}),
@@ -640,18 +614,31 @@ void Sem_init(void) {
 			// Tab #2 : Playback
 			(new ScrollView(0, 0, 320, 0))
 				->set_views({
-					// Autoplay
-					(new SelectorView(0, 0, 320, 35, false))
+					// Autoplay : continue with a radio when the queue ends
+					(new SelectorView(0, 0, 320, 35, true))
 						->set_texts({
 							(std::function<std::string ()>) []() { return LOCALIZED(OFF); },
-							(std::function<std::string ()>) []() { return LOCALIZED(ONLY_IN_PLAYLIST); },
 							(std::function<std::string ()>) []() { return LOCALIZED(ON); }
-						}, var_autoplay_level)
-						->set_title([](const SelectorView &) { return LOCALIZED(AUTOPLAY); })
+						}, var_autoplay_level != 0)
+						->set_title([](const SelectorView &) { return LOCALIZED(AUTOPLAY_RADIO); })
 						->set_on_change([](const SelectorView &view) {
-							if (var_autoplay_level != view.selected_button) {
-								var_autoplay_level = view.selected_button;
-								misc_tasks_request(TASK_CHANGE_BRIGHTNESS);
+							int new_level = view.selected_button ? 2 : 0;
+							if (var_autoplay_level != new_level) {
+								var_autoplay_level = new_level;
+								misc_tasks_request(TASK_SAVE_SETTINGS);
+							}
+						}),
+					// SponsorBlock
+					(new SelectorView(0, 0, 320, 35, true))
+						->set_texts({
+							(std::function<std::string ()>) []() { return LOCALIZED(OFF); },
+							(std::function<std::string ()>) []() { return LOCALIZED(ON); }
+						}, var_sponsorblock_enabled)
+						->set_title([](const SelectorView &) { return LOCALIZED(SPONSORBLOCK); })
+						->set_on_change([](const SelectorView &view) {
+							if (var_sponsorblock_enabled != view.selected_button) {
+								var_sponsorblock_enabled = view.selected_button;
+								misc_tasks_request(TASK_SAVE_SETTINGS);
 							}
 						}),
 
@@ -804,35 +791,6 @@ void Sem_init(void) {
 						->set_on_change([](const SelectorView &view) {
 							if (var_eco_mode != view.selected_button) {
 								var_eco_mode = view.selected_button;
-								misc_tasks_request(TASK_SAVE_SETTINGS);
-							}
-						}),
-					// Use linear filter
-					(new SelectorView(0, 0, 320, 35, true))
-						->set_texts({
-							(std::function<std::string ()>) []() { return LOCALIZED(OFF); },
-							(std::function<std::string ()>) []() { return LOCALIZED(ON); }
-						}, var_video_linear_filter)
-						->set_title([](const SelectorView &) { return LOCALIZED(LINEAR_FILTER); })
-						->set_on_change([](const SelectorView &view) {
-							if (var_video_linear_filter != view.selected_button) {
-								var_video_linear_filter = view.selected_button;
-								video_set_linear_filter_enabled(var_video_linear_filter);
-								misc_tasks_request(TASK_SAVE_SETTINGS);
-							}
-						}),
-					(new EmptyView(0, 0, 320, 10)),
-					// Debug info in the control tab
-					(new SelectorView(0, 0, 320, 35, true))
-						->set_texts({
-							(std::function<std::string ()>) []() { return LOCALIZED(OFF); },
-							(std::function<std::string ()>) []() { return LOCALIZED(ON); }
-						}, var_video_show_debug_info)
-						->set_title([](const SelectorView &view) { return LOCALIZED(VIDEO_SHOW_DEBUG_INFO); })
-						->set_on_change([](const SelectorView &view) {
-							if (var_video_show_debug_info != view.selected_button) {
-								var_video_show_debug_info = view.selected_button;
-								video_set_show_debug_info(var_video_show_debug_info);
 								misc_tasks_request(TASK_SAVE_SETTINGS);
 							}
 						}),

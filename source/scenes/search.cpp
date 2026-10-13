@@ -8,6 +8,8 @@
 #include "scenes/search.hpp"
 #include "scenes/video_player.hpp"
 #include "youtube_parser/parser.hpp"
+#include "music/music_parser.hpp"
+#include "music/queue.hpp"
 #include "ui/overlay.hpp"
 #include "ui/colors.hpp"
 #include "ui/ui.hpp"
@@ -21,6 +23,10 @@
 
 #define MAX_THUMBNAIL_LOAD_REQUEST 12
 
+#define FILTER_BAR_HEIGHT 22
+#define RESULT_ITEM_HEIGHT 44
+#define FILTER_NUM 4
+
 namespace Search {
 bool thread_suspend = false;
 bool already_init = false;
@@ -28,6 +34,7 @@ bool exiting = false;
 
 Mutex resource_lock;
 std::string cur_search_word = "";
+MusicSearchFilter cur_filter = MusicSearchFilter::SONGS;
 
 static size_t get_next_utf8_char_pos(const std::string &text, size_t pos) {
 	if (pos >= text.length()) {
@@ -84,18 +91,18 @@ std::string truncate_search_text_for_display(const std::string &text, double max
 
 	return text;
 }
-YouTubeSearchResult search_result;
-bool search_done = false;
+MusicSearchResult search_result;
 
 std::string last_url_input = "https://m.youtube.com/watch?v=";
 
-bool clicked_is_channel;
-std::string clicked_url;
+// set by item callbacks, processed in Search_draw()
+int clicked_index = -1;
+int long_held_index = -1;
 
 TextView *toast_view = (new TextView((320 - 150) / 2, 190, 150, DEFAULT_FONT_INTERVAL + SMALL_MARGIN));
 int toast_view_visible_frames_left = 0;
 
-const int RESULT_Y_LOW = 25;
+const int RESULT_Y_LOW = 25 + FILTER_BAR_HEIGHT;
 int RESULT_Y_HIGH = 240; // changes according to whether the video playing bar is drawn or not
 
 VerticalListView *main_view;
@@ -104,6 +111,7 @@ VerticalListView *top_bar_view = new VerticalListView(0, 0, 320);
 TextView *search_box_view;
 TextView *url_button_view;
 // annonymous RuleView : height 1
+HorizontalListView *filter_bar_view;
 ScrollView *result_view;
 VerticalListView *result_list_view =
     (new VerticalListView(0, 0, 320))
@@ -119,12 +127,32 @@ View *Search_get_search_bar_view() { return top_bar_view; }
 static void load_search_results(void *);
 static void load_more_search_results(void *);
 
+static void show_toast(const std::string &text) {
+	toast_view->set_text(text);
+	toast_view->set_is_visible(true);
+	toast_view_visible_frames_left = 100;
+	var_need_refresh = true;
+}
+
+static std::string filter_label(int filter) {
+	switch (filter) {
+	case 0:
+		return LOCALIZED(SONGS);
+	case 1:
+		return LOCALIZED(ALBUMS);
+	case 2:
+		return LOCALIZED(ARTISTS);
+	default:
+		return LOCALIZED(PLAYLISTS);
+	}
+}
+
 void Search_init(void) {
 	logger.info("search/init", "Initializing...");
 	Result_with_string result;
 
 	search_box_view = (new TextView(0, SEARCH_BOX_MARGIN, 320 - SEARCH_BOX_MARGIN * 3 - URL_BUTTON_WIDTH,
-	                                RESULT_Y_LOW - SEARCH_BOX_MARGIN * 2 - 1));
+	                                25 - SEARCH_BOX_MARGIN * 2 - 1));
 	search_box_view->set_text_offset(0, -1);
 	search_box_view->set_text((std::function<std::string()>)[]() { return LOCALIZED(SEARCH_HINT); });
 	search_box_view->set_get_background_color([](const View &) { return LIGHT0_BACK_COLOR; });
@@ -135,7 +163,7 @@ void Search_init(void) {
 		}
 	});
 
-	url_button_view = (new TextView(0, SEARCH_BOX_MARGIN, URL_BUTTON_WIDTH, RESULT_Y_LOW - SEARCH_BOX_MARGIN * 2 - 1));
+	url_button_view = (new TextView(0, SEARCH_BOX_MARGIN, URL_BUTTON_WIDTH, 25 - SEARCH_BOX_MARGIN * 2 - 1));
 	url_button_view->set_text_offset(0, -1);
 	url_button_view->set_x_alignment(TextView::XAlign::CENTER);
 	url_button_view->set_text((std::function<std::string()>)[]() { return LOCALIZED(URL); });
@@ -152,18 +180,45 @@ void Search_init(void) {
 	toast_view->set_get_background_color([](const View &) { return 0x50000000; });
 	toast_view->set_get_text_color([]() { return (u32)-1; });
 
-	top_bar_view->set_views({(new HorizontalListView(0, 0, RESULT_Y_LOW - 1))
-	                             ->set_views({new EmptyView(0, 0, SEARCH_BOX_MARGIN, RESULT_Y_LOW - 1), search_box_view,
-	                                          new EmptyView(0, 0, SEARCH_BOX_MARGIN, RESULT_Y_LOW - 1), url_button_view,
-	                                          new EmptyView(0, 0, SEARCH_BOX_MARGIN, RESULT_Y_LOW - 1)})
+	top_bar_view->set_views({(new HorizontalListView(0, 0, 25 - 1))
+	                             ->set_views({new EmptyView(0, 0, SEARCH_BOX_MARGIN, 25 - 1), search_box_view,
+	                                          new EmptyView(0, 0, SEARCH_BOX_MARGIN, 25 - 1), url_button_view,
+	                                          new EmptyView(0, 0, SEARCH_BOX_MARGIN, 25 - 1)})
 	                             ->set_get_background_color([](const View &) { return DEFAULT_BACK_COLOR; }),
 	                         (new RuleView(0, 0, 320, 1))
 	                             ->set_get_color([]() { return 0xFF000000; }) // always black
 	                             ->set_margin(0)});
 
+	// filter selector : Songs | Albums | Artists | Playlists
+	std::vector<View *> filter_views;
+	for (int i = 0; i < FILTER_NUM; i++) {
+		TextView *cur_view = (new TextView(0, 0, 320 / FILTER_NUM, FILTER_BAR_HEIGHT))
+		                         ->set_text((std::function<std::string()>)[i]() { return filter_label(i); })
+		                         ->set_x_alignment(TextView::XAlign::CENTER)
+		                         ->set_text_offset(0, -1);
+		cur_view->set_get_text_color([i]() { return (int)cur_filter == i ? DEF_DRAW_WHITE : DEFAULT_TEXT_COLOR; });
+		cur_view->set_get_background_color([i](const View &view) -> u32 {
+			return (int)cur_filter == i ? 0xFF3333D0 : View::STANDARD_BACKGROUND(view);
+		});
+		cur_view->set_on_view_released([i](View &) {
+			if ((int)cur_filter != i) {
+				cur_filter = (MusicSearchFilter)i;
+				if (cur_search_word != "") {
+					remove_all_async_tasks_with_type(load_search_results);
+					remove_all_async_tasks_with_type(load_more_search_results);
+					queue_async_task(load_search_results, NULL);
+				}
+				var_need_refresh = true;
+			}
+		});
+		filter_views.push_back(cur_view);
+	}
+	filter_bar_view = (new HorizontalListView(0, 0, FILTER_BAR_HEIGHT))->set_views(filter_views);
+
 	result_view =
 	    (new ScrollView(0, 0, 320, RESULT_Y_HIGH - RESULT_Y_LOW))->set_views({result_list_view, result_bottom_view});
-	main_view = (new VerticalListView(0, 0, 320))->set_views({top_bar_view, result_view})->set_draw_order({1, 0});
+	main_view =
+	    (new VerticalListView(0, 0, 320))->set_views({top_bar_view, filter_bar_view, result_view})->set_draw_order({2, 1, 0});
 
 	Search_resume("");
 	already_init = true;
@@ -183,6 +238,7 @@ void Search_exit(void) {
 	result_list_view = NULL;
 	result_bottom_view = NULL;
 	top_bar_view = NULL;
+	filter_bar_view = NULL;
 	search_box_view = NULL;
 	url_button_view = NULL;
 
@@ -215,7 +271,7 @@ static void set_loading_bottom_view() {
 }
 static void update_result_bottom_view() {
 	delete result_bottom_view;
-	if (search_result.error != "" || search_result.has_more_results()) {
+	if (search_result.error != "" || search_result.has_more()) {
 		TextView *cur_view =
 		    (new TextView(0, 0, 320, DEFAULT_FONT_INTERVAL * 2))->set_x_alignment(TextView::XAlign::CENTER);
 		if (search_result.error != "") {
@@ -229,86 +285,66 @@ static void update_result_bottom_view() {
 	}
 	result_view->views[1] = result_bottom_view;
 	result_view->set_on_child_drawn(1, [](const ScrollView &, int) {
-		if (search_result.has_more_results() && search_result.error == "") {
+		if (search_result.has_more() && search_result.error == "") {
 			if (!is_async_task_running(load_search_results) && !is_async_task_running(load_more_search_results)) {
 				queue_async_task(load_more_search_results, NULL);
 			}
 		}
 	});
 }
-static View *result_item_to_view(const YouTubeSuccinctItem &item) {
-	View *res_view;
-	if (item.type == YouTubeSuccinctItem::CHANNEL) {
-		SuccinctChannelView *cur_view = new SuccinctChannelView(0, 0, 320, VIDEO_LIST_THUMBNAIL_HEIGHT);
-		cur_view->set_name(item.channel.name);
-		cur_view->set_auxiliary_lines({item.channel.subscribers, item.channel.video_num});
-		cur_view->set_thumbnail_url(item.channel.icon_url);
-		res_view = cur_view;
-	} else {
-		SuccinctVideoView *cur_view = new SuccinctVideoView(0, 0, 320, VIDEO_LIST_THUMBNAIL_HEIGHT);
-		cur_view->set_title_lines(truncate_str(item.get_name(), 320 - (VIDEO_LIST_THUMBNAIL_WIDTH + 3), 2, 0.5, 0.5));
-		if (item.type == YouTubeSuccinctItem::VIDEO) {
-			cur_view->set_auxiliary_lines({item.video.views_str, item.video.publish_date});
-			cur_view->set_bottom_right_overlay(item.video.duration_text);
-		} else if (item.type == YouTubeSuccinctItem::PLAYLIST) {
-			cur_view->set_auxiliary_lines({item.playlist.video_count_str});
-		}
-		cur_view->set_thumbnail_url(item.get_thumbnail_url());
-		cur_view->set_is_playlist(item.type == YouTubeSuccinctItem::PLAYLIST);
-		res_view = cur_view;
+static View *result_item_to_view(const MusicItem &item, int index) {
+	constexpr int TITLE_WIDTH = 320 - RESULT_ITEM_HEIGHT - 3 - SMALL_MARGIN;
+	std::string subtitle = item.subtitle;
+	if (item.type == MusicItem::Type::SONG && !item.track.album.empty()) {
+		subtitle += " • " + item.track.album;
 	}
-	res_view->set_get_background_color(View::STANDARD_BACKGROUND);
-	res_view->set_on_view_released([item](View &view) {
-		clicked_url = item.get_url();
-		clicked_is_channel = item.type == YouTubeSuccinctItem::CHANNEL;
-	});
-	return res_view;
-}
-static std::pair<int *, std::string *> get_thumbnail_info_from_view(View *view) {
-	SuccinctVideoView *cur_view0 = dynamic_cast<SuccinctVideoView *>(view);
-	if (cur_view0) {
-		return {&cur_view0->thumbnail_handle, &cur_view0->thumbnail_url};
+	SuccinctVideoView *cur_view = (new SuccinctVideoView(0, 0, 320, RESULT_ITEM_HEIGHT))
+	                                  ->set_square_thumbnail(true)
+	                                  ->set_title_lines(truncate_str(item.title, TITLE_WIDTH, 1, 0.5, 0.5))
+	                                  ->set_auxiliary_lines(truncate_str(subtitle, TITLE_WIDTH, 1, 0.5, 0.5))
+	                                  ->set_thumbnail_url(music_thumbnail_url(item.thumbnail_url, 120));
+	if (item.type == MusicItem::Type::SONG) {
+		cur_view->set_bottom_right_overlay(item.track.duration_text);
 	}
-	SuccinctChannelView *cur_view1 = dynamic_cast<SuccinctChannelView *>(view);
-	if (cur_view1) {
-		return {&cur_view1->thumbnail_handle, &cur_view1->thumbnail_url};
+	cur_view->set_get_background_color(View::STANDARD_BACKGROUND);
+	if (item.type == MusicItem::Type::SONG) {
+		cur_view->add_on_long_hold(40, [index](View &) { long_held_index = index; });
 	}
-	usleep(1000000);
-	return {NULL, NULL};
+	cur_view->set_on_view_released([index](View &) { clicked_index = index; });
+	return cur_view;
 }
 static void load_search_results(void *) {
 	// pre-access processing
 	resource_lock.lock();
 	std::string search_word = cur_search_word;
-	search_done = false;
+	MusicSearchFilter filter = cur_filter;
 
 	result_list_view->recursive_delete_subviews();
+	result_view->reset();
 	set_loading_bottom_view();
-	search_result = YouTubeSearchResult();
+	search_result = MusicSearchResult();
 	var_need_refresh = true;
 	resource_lock.unlock();
 
 	// actual loading
-	std::string search_url = "https://m.youtube.com/results?search_query=";
-	for (auto c : search_word) {
-		search_url.push_back('%');
-		search_url.push_back("0123456789ABCDEF"[(u8)c / 16]);
-		search_url.push_back("0123456789ABCDEF"[(u8)c % 16]);
-	}
 	add_cpu_limit(ADDITIONAL_CPU_LIMIT);
-	YouTubeSearchResult new_result = youtube_load_search(search_url);
+	MusicSearchResult new_result = music_search(search_word, filter);
 	remove_cpu_limit(ADDITIONAL_CPU_LIMIT);
 
-	// wrap and truncate here
-	logger.info("search", "truncate/view creation start");
 	std::vector<View *> new_result_views;
-	for (size_t i = 0; i < new_result.results.size(); i++) {
-		new_result_views.push_back(result_item_to_view(new_result.results[i]));
+	for (size_t i = 0; i < new_result.items.size(); i++) {
+		new_result_views.push_back(result_item_to_view(new_result.items[i], i));
 	}
-	logger.info("search", "truncate/view creation end");
 
 	resource_lock.lock();
 	if (exiting) { // app shut down while loading
+		resource_lock.unlock();
+		return;
+	}
+	if (filter != cur_filter || search_word != cur_search_word) { // superseded by a newer search
+		for (auto view : new_result_views) {
+			delete view;
+		}
 		resource_lock.unlock();
 		return;
 	}
@@ -316,23 +352,32 @@ static void load_search_results(void *) {
 	result_list_view->views = new_result_views;
 	update_result_bottom_view();
 
-	search_done = true;
 	var_need_refresh = true;
 	resource_lock.unlock();
 }
 static void load_more_search_results(void *) {
+	resource_lock.lock();
 	auto new_result = search_result;
-	new_result.load_more_results();
+	resource_lock.unlock();
 
-	logger.info("search-c", "truncate/view creation start");
+	add_cpu_limit(ADDITIONAL_CPU_LIMIT);
+	new_result.load_more();
+	remove_cpu_limit(ADDITIONAL_CPU_LIMIT);
+
 	std::vector<View *> new_result_views;
-	for (size_t i = search_result.results.size(); i < new_result.results.size(); i++) {
-		new_result_views.push_back(result_item_to_view(new_result.results[i]));
+	for (size_t i = search_result.items.size(); i < new_result.items.size(); i++) {
+		new_result_views.push_back(result_item_to_view(new_result.items[i], i));
 	}
-	logger.info("search-c", "truncate/view creation end");
 
 	resource_lock.lock();
 	if (exiting) { // app shut down while loading
+		resource_lock.unlock();
+		return;
+	}
+	if (new_result.filter != cur_filter) {
+		for (auto view : new_result_views) {
+			delete view;
+		}
 		resource_lock.unlock();
 		return;
 	}
@@ -367,14 +412,11 @@ static void access_input_url(void *) {
 		resource_lock.unlock();
 		return;
 	}
-	if (page_type != YouTubePageType::INVALID) {
-		if (page_type == YouTubePageType::VIDEO) {
-			global_intent.next_scene = SceneType::VIDEO_PLAYER;
-		} else if (page_type == YouTubePageType::CHANNEL) {
-			global_intent.next_scene = SceneType::CHANNEL;
-		} else if (page_type == YouTubePageType::SEARCH) {
-			global_intent.next_scene = SceneType::SEARCH;
-		}
+	if (page_type == YouTubePageType::VIDEO) {
+		global_intent.next_scene = SceneType::VIDEO_PLAYER;
+		global_intent.arg = url;
+	} else if (page_type == YouTubePageType::CHANNEL) {
+		global_intent.next_scene = SceneType::CHANNEL;
 		global_intent.arg = url;
 	} else {
 		toast_view->set_text((std::function<std::string()>)[]() { return LOCALIZED(NOT_A_YOUTUBE_URL); });
@@ -459,6 +501,48 @@ bool Search_show_url_input_keyboard() {
 	}
 }
 
+// handles taps on results; should be called while `resource_lock` is locked
+static void process_item_actions() {
+	if (long_held_index != -1) {
+		int index = long_held_index;
+		long_held_index = clicked_index = -1;
+		main_view->reset_holding_status(); // the long hold must not turn into a click
+		if (index < (int)search_result.items.size()) {
+			const auto &track = search_result.items[index].track;
+			bool was_empty = !MusicQueue::has_current();
+			MusicQueue::add_next(track);
+			if (was_empty) {
+				music_player_play_queue();
+			}
+			show_toast(LOCALIZED(ADDED_TO_QUEUE));
+		}
+	}
+	if (clicked_index != -1) {
+		int index = clicked_index;
+		clicked_index = -1;
+		if (index >= (int)search_result.items.size()) {
+			return;
+		}
+		const auto &item = search_result.items[index];
+		if (item.type == MusicItem::Type::SONG) {
+			// queue the song results from the tapped one onwards
+			std::vector<MusicTrack> tracks;
+			for (int i = index; i < (int)search_result.items.size(); i++) {
+				if (search_result.items[i].type == MusicItem::Type::SONG) {
+					tracks.push_back(search_result.items[i].track);
+				}
+			}
+			MusicQueue::set(tracks, 0);
+			music_player_play_queue();
+			global_intent.next_scene = SceneType::VIDEO_PLAYER;
+			global_intent.arg = "";
+		} else {
+			global_intent.next_scene = SceneType::MUSIC_BROWSE;
+			global_intent.arg = item.browse_id;
+		}
+	}
+}
+
 void Search_draw(void) {
 	Hid_info key;
 	Util_hid_query_key_state(&key);
@@ -473,6 +557,7 @@ void Search_draw(void) {
 		toast_view_visible_frames_left--;
 		if (!toast_view_visible_frames_left) {
 			toast_view->set_is_visible(false);
+			var_need_refresh = true;
 		}
 	}
 	if (var_need_refresh || !var_eco_mode) {
@@ -482,9 +567,11 @@ void Search_draw(void) {
 
 		Draw_screen_ready(2, DEFAULT_BACK_COLOR);
 
-		// (!) : I don't know how to draw textures truncated, so I will just fill the margin with white again
 		resource_lock.lock();
 		main_view->draw();
+		if (cur_search_word == "") {
+			Draw_x_centered(LOCALIZED(SEARCH_MUSIC_HINT), 0, 320, RESULT_Y_LOW + 30, 0.5, 0.5, LIGHT1_TEXT_COLOR);
+		}
 		if (toast_view_visible_frames_left > 0) {
 			toast_view->draw();
 		}
@@ -520,11 +607,7 @@ void Search_draw(void) {
 
 		resource_lock.lock();
 		main_view->update(key);
-		if (clicked_url != "") {
-			global_intent.next_scene = clicked_is_channel ? SceneType::CHANNEL : SceneType::VIDEO_PLAYER;
-			global_intent.arg = clicked_url;
-			clicked_url = "";
-		}
+		process_item_actions();
 		resource_lock.unlock();
 
 		if (video_playing_bar_show) {
@@ -533,6 +616,18 @@ void Search_draw(void) {
 
 		if (key.p_a) {
 			Search_show_search_keyboard();
+		}
+		if (key.p_l || key.p_r) { // switch filters with L/R
+			int next = ((int)cur_filter + (key.p_r ? 1 : FILTER_NUM - 1)) % FILTER_NUM;
+			resource_lock.lock();
+			cur_filter = (MusicSearchFilter)next;
+			if (cur_search_word != "") {
+				remove_all_async_tasks_with_type(load_search_results);
+				remove_all_async_tasks_with_type(load_more_search_results);
+				queue_async_task(load_search_results, NULL);
+			}
+			var_need_refresh = true;
+			resource_lock.unlock();
 		}
 
 		if (key.p_b) {

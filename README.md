@@ -129,6 +129,7 @@ this way can be flagged, so consider using a secondary Google account. Never sha
 
  - [SponsorBlock](https://sponsor.ajay.app/) by Ajay Ramachandran and contributors - skip segment data.
  - [Pear Desktop](https://github.com/pear-devs/pear-desktop) - inspiration for this project.
+ - Claude - AI assistance.
 
 ## License
 
